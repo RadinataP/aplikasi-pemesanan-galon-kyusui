@@ -152,7 +152,90 @@ class OwnerControllerTest extends TestCase
             ->assertJsonMissingPath('data.proof.path');
     }
 
-    public function test_assign_rejects_courier_with_an_active_assignment(): void
+    public function test_owner_courier_list_includes_active_profiles_even_with_unfinished_assignments(): void
+    {
+        [$ownerUser] = $this->owner();
+        [, $availableCourier] = $this->courier('available@example.com');
+        [, $assignedCourier] = $this->courier('assigned@example.com');
+        [, $activeCourier] = $this->courier('active@example.com');
+        [, $inactiveCourier] = $this->courier('inactive@example.com');
+
+        $assignedOrder = $this->order(OrderStatus::DITUGASKAN);
+        CourierAssignment::create([
+            'order_id' => $assignedOrder->id,
+            'courier_id' => $assignedCourier->id,
+            'status' => AssignmentStatus::ASSIGNED->value,
+            'assigned_at' => now(),
+        ]);
+
+        $activeOrder = $this->order(OrderStatus::DALAM_PENGANTARAN);
+        CourierAssignment::create([
+            'order_id' => $activeOrder->id,
+            'courier_id' => $activeCourier->id,
+            'status' => AssignmentStatus::ACTIVE->value,
+            'assigned_at' => now(),
+        ]);
+
+        $inactiveCourier->user()->update(['status' => 'INACTIVE']);
+
+        $response = $this->actingAs($ownerUser)->getJson('/api/v1/owner/couriers')
+            ->assertOk()
+            ->assertJsonPath('meta.eligible_count', 3)
+            ->assertJsonPath('meta.available_count', 3)
+            ->assertJsonCount(3, 'data');
+
+        $ids = collect($response->json('data'))->pluck('id')->all();
+        $this->assertContains($availableCourier->id, $ids);
+        $this->assertContains($assignedCourier->id, $ids);
+        $this->assertContains($activeCourier->id, $ids);
+        $this->assertNotContains($inactiveCourier->id, $ids);
+    }
+
+    public function test_owner_courier_list_explains_when_no_courier_profile_exists(): void
+    {
+        [$ownerUser] = $this->owner();
+
+        $this->actingAs($ownerUser)->getJson('/api/v1/owner/couriers')
+            ->assertOk()
+            ->assertJsonCount(0, 'data')
+            ->assertJsonPath('meta.eligible_count', 0)
+            ->assertJsonPath('meta.available_count', 0)
+            ->assertJsonPath('message', 'Belum ada profil kurir aktif. Periksa akun COURIER dan relasinya pada tabel couriers.');
+    }
+
+    public function test_assign_allows_courier_with_an_existing_assigned_delivery(): void
+    {
+        [$ownerUser] = $this->owner();
+        [, $courier] = $this->courier();
+        $existingOrder = $this->order(OrderStatus::DITUGASKAN);
+        CourierAssignment::create([
+            'order_id' => $existingOrder->id,
+            'courier_id' => $courier->id,
+            'status' => AssignmentStatus::ASSIGNED->value,
+            'assigned_at' => now(),
+        ]);
+        $newOrder = $this->order(OrderStatus::DIPROSES);
+
+        $this->actingAs($ownerUser)->postJson('/api/v1/owner/orders/'.$newOrder->id.'/assignment', [
+            'courier_id' => $courier->id,
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.order_status', OrderStatus::DITUGASKAN->value);
+
+        $this->assertDatabaseHas('courier_assignments', [
+            'order_id' => $existingOrder->id,
+            'courier_id' => $courier->id,
+            'status' => AssignmentStatus::ASSIGNED->value,
+        ]);
+        $this->assertDatabaseHas('courier_assignments', [
+            'order_id' => $newOrder->id,
+            'courier_id' => $courier->id,
+            'status' => AssignmentStatus::ASSIGNED->value,
+        ]);
+        $this->assertSame(2, CourierAssignment::query()->where('courier_id', $courier->id)->count());
+    }
+
+    public function test_assign_allows_courier_with_an_existing_active_delivery(): void
     {
         [$ownerUser] = $this->owner();
         [, $courier] = $this->courier();
@@ -162,12 +245,24 @@ class OwnerControllerTest extends TestCase
             'courier_id' => $courier->id,
             'status' => AssignmentStatus::ACTIVE->value,
             'assigned_at' => now(),
+            'started_at' => now(),
         ]);
-        $waitingOrder = $this->order(OrderStatus::DIPROSES);
+        $newOrder = $this->order(OrderStatus::DIPROSES);
 
-        $this->actingAs($ownerUser)->postJson('/api/v1/owner/orders/'.$waitingOrder->id.'/assignment', [
+        $this->actingAs($ownerUser)->postJson('/api/v1/owner/orders/'.$newOrder->id.'/assignment', [
             'courier_id' => $courier->id,
-        ])->assertStatus(409);
+        ])->assertCreated();
+
+        $this->assertDatabaseHas('courier_assignments', [
+            'order_id' => $activeOrder->id,
+            'courier_id' => $courier->id,
+            'status' => AssignmentStatus::ACTIVE->value,
+        ]);
+        $this->assertDatabaseHas('courier_assignments', [
+            'order_id' => $newOrder->id,
+            'courier_id' => $courier->id,
+            'status' => AssignmentStatus::ASSIGNED->value,
+        ]);
     }
 
     public function test_assign_moves_order_to_assigned_and_records_history(): void

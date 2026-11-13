@@ -12,6 +12,7 @@ use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -52,9 +53,13 @@ class OrderApiTest extends TestCase
 
         $response->assertCreated()
             ->assertJsonPath('data.subtotal_amount', '30000.00')
-            ->assertJsonPath('data.delivery_fee', '5000.00')
-            ->assertJsonPath('data.total_amount', '35000.00')
+            ->assertJsonPath('data.delivery_fee', '2000.00')
+            ->assertJsonPath('data.total_amount', '32000.00')
             ->assertJsonPath('data.order_status', 'MENUNGGU_PEMBAYARAN')
+            // Kontrak lokasi tujuan dipakai Android untuk marker dan routing.
+            ->assertJsonPath('data.delivery_location.address', 'Jl. Depot')
+            ->assertJsonPath('data.delivery_location.latitude', (float) config('kyusui.service_area.latitude'))
+            ->assertJsonPath('data.delivery_location.longitude', (float) config('kyusui.service_area.longitude'))
             ->assertJsonPath('data.items.0.product_name', 'Galon')
             ->assertJsonPath('data.items.0.unit_price', '15000.00')
             ->assertJsonPath('data.items.0.line_total', '30000.00')
@@ -63,7 +68,7 @@ class OrderApiTest extends TestCase
 
         $order = Order::firstOrFail();
         $this->assertMatchesRegularExpression('/^ORD-\d{8}-\d{4}$/', $order->order_number);
-        $this->assertDatabaseHas('payments', ['order_id' => $order->id, 'amount' => 35000]);
+        $this->assertDatabaseHas('payments', ['order_id' => $order->id, 'amount' => 32000]);
         $this->assertDatabaseHas('order_status_histories', [
             'order_id' => $order->id,
             'to_status' => 'MENUNGGU_PEMBAYARAN',
@@ -77,11 +82,11 @@ class OrderApiTest extends TestCase
 
         $this->actingAs($user)->postJson('/api/v1/customer/orders', [
             'items' => [['product_id' => 1, 'quantity' => 1, 'unit_price' => 1, 'line_total' => 1]],
-            'delivery_location' => ['latitude' => -6.2, 'longitude' => 106.816666, 'address' => 'Jl. Depot'],
+            'delivery_location' => ['latitude' => (float) config('kyusui.service_area.latitude'), 'longitude' => (float) config('kyusui.service_area.longitude'), 'address' => 'Jl. Depot'],
             'payment_method' => 'CASH',
             'subtotal_amount' => 1,
             'total_amount' => 1,
-        ])->assertCreated()->assertJsonPath('data.total_amount', '20000.00');
+        ])->assertCreated()->assertJsonPath('data.total_amount', '16000.00');
 
         $this->assertDatabaseMissing('orders', ['total_amount' => 1]);
     }
@@ -272,6 +277,45 @@ class OrderApiTest extends TestCase
             ->assertUnprocessable();
     }
 
+    public function test_order_index_accepts_multiple_canonical_order_statuses(): void
+    {
+        [$user, $customer] = $this->customer();
+        $customer->orders()->create([
+            'order_status' => 'MENUNGGU_PEMBAYARAN',
+            'subtotal_amount' => 100,
+            'total_amount' => 100,
+            'delivery_address' => 'Jl. Test',
+            'placed_at' => now(),
+        ]);
+        $customer->orders()->create([
+            'order_status' => 'SELESAI',
+            'subtotal_amount' => 100,
+            'total_amount' => 100,
+            'delivery_address' => 'Jl. Test',
+            'placed_at' => now()->subDay(),
+        ]);
+
+        // Dipisah koma...
+        $this->actingAs($user)->getJson('/api/v1/customer/orders?order_status=MENUNGGU_PEMBAYARAN,SELESAI')
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('meta.total', 2);
+
+        // ...maupun berbentuk array.
+        $this->actingAs($user)->getJson('/api/v1/customer/orders?order_status[]=MENUNGGU_PEMBAYARAN&order_status[]=SELESAI')
+            ->assertOk()
+            ->assertJsonCount(2, 'data');
+
+        // Satu nilai tak dikenal membatalkan seluruh permintaan.
+        $this->actingAs($user)->getJson('/api/v1/customer/orders?order_status=SELESAI,UNKNOWN')
+            ->assertUnprocessable();
+
+        // Nilai duplikat tidak menggandakan hasil.
+        $this->actingAs($user)->getJson('/api/v1/customer/orders?order_status=SELESAI,SELESAI')
+            ->assertOk()
+            ->assertJsonCount(1, 'data');
+    }
+
     public function test_order_tracking_returns_null_before_assignment_and_resource_shape_after_assignment(): void
     {
         [$user, $customer] = $this->customer();
@@ -336,7 +380,7 @@ class OrderApiTest extends TestCase
             'SELESAI',
         ];
 
-        $this->withoutMiddleware(\Illuminate\Routing\Middleware\ThrottleRequests::class);
+        $this->withoutMiddleware(ThrottleRequests::class);
 
         foreach ($blockedStatuses as $status) {
             $order->update(['order_status' => $status]);
@@ -391,7 +435,7 @@ class OrderApiTest extends TestCase
 
         // Tanpa autentikasi -> 401 (Sanctum authentication required)
         $response = $this->postJson('/api/v1/customer/orders/'.$order->id.'/cancel');
-        
+
         $response->assertStatus(401);
     }
 
@@ -511,8 +555,8 @@ class OrderApiTest extends TestCase
         $payload = [
             'items' => $items,
             'delivery_location' => [
-                'latitude' => -6.2,
-                'longitude' => 106.816666,
+                'latitude' => (float) config('kyusui.service_area.latitude'),
+                'longitude' => (float) config('kyusui.service_area.longitude'),
                 'address' => 'Jl. Depot',
             ],
         ];

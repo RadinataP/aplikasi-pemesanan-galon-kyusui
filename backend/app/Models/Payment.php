@@ -103,5 +103,25 @@ class Payment extends Model
             'to_status' => $status->value,
             'changed_by' => $changedBy,
         ]);
+
+        // Buku kas hanya mencatat uang masuk saat payment benar-benar PAID.
+        // UNIQUE(payment_id) membuat pemanggilan ulang idempotent.
+        if ($status === PaymentStatus::PAID) {
+            $this->loadMissing('order');
+            \App\Models\FinancialTransaction::query()->firstOrCreate(
+                ['payment_id' => $this->id],
+                [
+                    'type' => 'INCOME',
+                    'category' => 'Penjualan',
+                    'amount' => $this->amount,
+                    'payment_method' => $this->payment_method,
+                    'source' => $this->order?->source === 'DIRECT' ? 'DIRECT_ORDER' : 'APP_PAYMENT',
+                    'order_id' => $this->order_id,
+                    'recorded_by_user_id' => $changedBy,
+                    'description' => 'Pemasukan dari pembayaran order '.$this->order_id,
+                    'occurred_at' => now(),
+                ]
+            );
+        }
     }
 }

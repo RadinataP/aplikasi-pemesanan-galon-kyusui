@@ -19,6 +19,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Throwable;
 
@@ -26,6 +27,13 @@ class OrderController extends Controller
 {
     /**
      * `GET /customer/orders` — spec 06 section 9.5.
+     *
+     * `order_status` menerima satu nilai (`?order_status=SELESAI`) maupun
+     * banyak nilai (`?order_status=DIPROSES,DALAM_PENGANTARAN` atau bentuk
+     * array `order_status[]=...`). Setiap nilai divalidasi terhadap
+     * [OrderStatus]; nilai tak dikenal tetap menghasilkan `422` seperti
+     * sebelumnya. Dukungan multi-nilai ini yang membuat filter "Aktif" dapat
+     * dikerjakan server-side, bukan hanya grouping di klien.
      */
     public function index(Request $request): JsonResponse
     {
@@ -34,12 +42,13 @@ class OrderController extends Controller
 
         $validated = $request->validate([
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:50'],
-            'order_status' => ['sometimes', 'string', 'in:'.implode(',', array_column(OrderStatus::cases(), 'value'))],
         ]);
+
+        $statuses = $this->resolveOrderStatuses($request);
 
         $orders = $customer->orders()
             ->with(['items', 'payment', 'assignments.courier.user'])
-            ->when(isset($validated['order_status']), fn ($query) => $query->where('order_status', $validated['order_status']))
+            ->when($statuses !== [], fn ($query) => $query->whereIn('order_status', $statuses))
             ->latestPlaced()
             ->paginate($validated['per_page'] ?? 15);
 
@@ -52,6 +61,40 @@ class OrderController extends Controller
             ],
             'message' => 'Data pesanan berhasil dimuat.',
         ], 200);
+    }
+
+    /**
+     * Menormalkan query `order_status` menjadi daftar status yang tervalidasi.
+     *
+     * @return array<int, string>
+     */
+    private function resolveOrderStatuses(Request $request): array
+    {
+        $raw = $request->query('order_status');
+
+        if ($raw === null || $raw === '') {
+            return [];
+        }
+
+        $candidates = is_array($raw) ? $raw : explode(',', (string) $raw);
+        $statuses = array_values(array_unique(array_filter(
+            array_map(fn ($status) => is_string($status) ? trim($status) : $status, $candidates),
+            fn ($status) => $status !== null && $status !== ''
+        )));
+
+        if ($statuses === []) {
+            return [];
+        }
+
+        Validator::make(
+            ['order_status' => $statuses],
+            [
+                'order_status' => ['array'],
+                'order_status.*' => ['string', 'in:'.implode(',', array_column(OrderStatus::cases(), 'value'))],
+            ]
+        )->validate();
+
+        return $statuses;
     }
 
     /**
@@ -105,6 +148,7 @@ class OrderController extends Controller
                     ->keyBy('id');
 
                 $subtotal = '0.00';
+                $totalQuantity = 0; // Ongkir ditentukan dari jumlah galon, bukan jarak.
                 $orderItems = [];
 
                 foreach ($validated['items'] as $item) {
@@ -113,6 +157,7 @@ class OrderController extends Controller
 
                     $lineTotal = bcmul((string) $product->price, (string) $item['quantity'], 2);
                     $subtotal = bcadd($subtotal, $lineTotal, 2);
+                    $totalQuantity += (int) $item['quantity'];
                     $orderItems[] = [
                         'product_id' => $product->id,
                         'product_name' => $product->name,
@@ -122,7 +167,7 @@ class OrderController extends Controller
                     ];
                 }
 
-                $deliveryFee = $this->calculateDeliveryFee($deliveryLatitude, $deliveryLongitude);
+                $deliveryFee = $this->calculateDeliveryFee($deliveryLatitude, $deliveryLongitude, $totalQuantity);
                 $totalAmount = bcadd($subtotal, number_format($deliveryFee, 2, '.', ''), 2);
 
                 $order = Order::create([
@@ -318,12 +363,32 @@ class OrderController extends Controller
         return BusinessSetting::active()->hasActiveQris();
     }
 
-    private function calculateDeliveryFee(float $latitude, float $longitude): float
+    private function calculateDeliveryFee(float $latitude, float $longitude, int $gallonQuantity): float
     {
-        $distance = $this->calculateDistance($latitude, $longitude, -6.2, 106.816666);
-        abort_if($distance > 10, 422, 'Alamat di luar area layanan kami (max 10km).');
+        // Pusat dan radius area layanan adalah konfigurasi bisnis, bukan nilai
+        // yang ditanam langsung di controller. Default dipertahankan sama
+        // dengan koordinat sementara sebelumnya sampai Owner menetapkan titik depot.
+        $centerLatitude = (float) config('kyusui.service_area.latitude');
+        $centerLongitude = (float) config('kyusui.service_area.longitude');
+        $radiusKm = (float) config('kyusui.service_area.radius_km', 10);
+        $feePerGallon = (int) config('kyusui.delivery.fee_per_gallon', 1000);
 
-        return 5000 + (int) ceil($distance * 2000);
+        $distance = $this->calculateDistance(
+            $latitude,
+            $longitude,
+            $centerLatitude,
+            $centerLongitude,
+        );
+
+        abort_if(
+            $distance > $radiusKm,
+            422,
+            'Alamat di luar area layanan kami (maksimal '.rtrim(rtrim(number_format($radiusKm, 2, '.', ''), '0'), '.').' km).',
+        );
+
+        // Ongkir = tarif per galon × jumlah galon. Jarak hanya dipakai untuk
+        // validasi area layanan; jarak tidak lagi menambah ongkir.
+        return max(0, $feePerGallon) * max(0, $gallonQuantity);
     }
 
     private function calculateDistance(float $latitudeFrom, float $longitudeFrom, float $latitudeTo, float $longitudeTo): float

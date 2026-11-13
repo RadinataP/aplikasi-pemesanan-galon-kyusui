@@ -108,7 +108,21 @@ class CourierController extends Controller
                 'status' => $assignment->order->order_status,
                 'subtotal' => $assignment->order->subtotal_amount,
                 'total' => $assignment->order->total_amount,
+                // Koordinat tujuan berasal dari pesanan yang dibuat pelanggan.
+                // Pertahankan delivery_address sebagai key lama agar kompatibel
+                // dengan klien Android versi sebelumnya.
                 'delivery_address' => $assignment->order->delivery_address,
+                'delivery_location' => $assignment->order->fulfillment_type === 'PICKUP'
+                    ? null
+                    : [
+                        'address' => $assignment->order->delivery_address,
+                        'latitude' => $assignment->order->delivery_latitude === null
+                            ? null
+                            : (float) $assignment->order->delivery_latitude,
+                        'longitude' => $assignment->order->delivery_longitude === null
+                            ? null
+                            : (float) $assignment->order->delivery_longitude,
+                    ],
                 'customer' => [
                     'name' => $assignment->order->customer->user->name,
                 ],
@@ -125,6 +139,209 @@ class CourierController extends Controller
             ],
             'latest_location' => $assignment->latestLocation,
         ];
+    }
+
+    /**
+     * GET /courier/open-orders
+     *
+     * Daftar pesanan yang dapat diklaim oleh semua akun kurir ACTIVE.
+     * Endpoint ini tidak mensyaratkan sesi duty aktif.
+     *
+     * Pesanan QRIS yang belum diverifikasi tetap terlihat dan dapat diklaim,
+     * tetapi start() akan menolak pengantaran sampai payment berstatus PAID.
+     * Pesanan CASH dapat diklaim setelah metode pembayaran tersimpan.
+     */
+    public function openOrders(Request $request): JsonResponse
+    {
+        $courierId = $this->courierId($request);
+
+        abort_unless(
+            $request->user()->status === 'ACTIVE',
+            403,
+            'Akun kurir tidak aktif.'
+        );
+
+        $orders = Order::query()
+            ->with(['customer.user:id,name', 'items.product', 'payment'])
+            ->whereIn('order_status', [
+                OrderStatus::MENUNGGU_DIPROSES->value,
+                OrderStatus::DIPROSES->value,
+            ])
+            ->whereHas('payment', function ($query): void {
+                $query->whereIn('payment_method', [
+                    PaymentMethod::CASH->value,
+                    PaymentMethod::QRIS->value,
+                ]);
+            })
+            ->whereDoesntHave('assignments')
+            ->latestPlaced()
+            ->get();
+
+        return response()->json([
+            'data' => $orders->map(fn (Order $order) => [
+                'order_id' => $order->id,
+                'order_number' => $order->order_number,
+                'order_status' => $order->order_status,
+                'fulfillment_type' => $order->fulfillment_type,
+                'customer' => [
+                    'name' => $order->customer?->user?->name ?? $order->customer_name,
+                ],
+                'items' => $order->items->map(fn ($item) => [
+                    'product_name' => $item->product_name,
+                    'quantity' => $item->quantity,
+                ]),
+                // Format konsisten dengan OrderResource dan payload assignment.
+                'delivery_address' => $order->delivery_address,
+                'delivery_location' => $order->fulfillment_type === 'PICKUP'
+                    ? null
+                    : [
+                        'address' => $order->delivery_address,
+                        'latitude' => $order->delivery_latitude === null
+                            ? null
+                            : (float) $order->delivery_latitude,
+                        'longitude' => $order->delivery_longitude === null
+                            ? null
+                            : (float) $order->delivery_longitude,
+                    ],
+                'subtotal_amount' => $order->subtotal_amount,
+                'delivery_fee' => $order->delivery_fee,
+                'total_amount' => $order->total_amount,
+                'payment' => $order->payment === null ? null : [
+                    'method' => $order->payment->payment_method,
+                    'status' => $order->payment->payment_status,
+                    // QRIS pending boleh diklaim, tetapi belum boleh dimulai.
+                    'can_start_delivery' => $order->payment->payment_method === PaymentMethod::CASH->value
+                        || $order->payment->payment_status === PaymentStatus::PAID->value,
+                ],
+                'can_claim' => true,
+            ]),
+            'message' => 'Daftar pesanan terbuka berhasil dimuat.',
+        ], 200);
+    }
+
+    /**
+     * POST /courier/open-orders/{order}/claim
+     *
+     * Klaim atomik: row order dikunci sebelum pemeriksaan assignment dan
+     * pembuatan assignment. Dua kurir yang mengklaim bersamaan tidak dapat
+     * membuat dua assignment untuk order yang sama.
+     */
+    public function claimOrder(Request $request, Order $order): JsonResponse
+    {
+        $courierId = $this->courierId($request);
+
+        // Akun harus aktif dan memiliki role COURIER; sesi duty tidak diwajibkan.
+        abort_unless(
+            $request->user()->status === 'ACTIVE'
+                && $request->user()->role?->name === 'COURIER',
+            403,
+            'Akun kurir tidak aktif.'
+        );
+
+        try {
+            $assignment = DB::transaction(function () use ($order, $courierId, $request): CourierAssignment {
+                $lockedOrder = Order::query()
+                    ->whereKey($order->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                abort_unless(
+                    in_array($lockedOrder->order_status, [
+                        OrderStatus::MENUNGGU_DIPROSES->value,
+                        OrderStatus::DIPROSES->value,
+                    ], true),
+                    409,
+                    'Pesanan tidak lagi tersedia untuk diklaim.'
+                );
+
+                // Periksa ulang assignment setelah lock order didapat.
+                abort_if(
+                    CourierAssignment::query()->where('order_id', $lockedOrder->id)->exists(),
+                    409,
+                    'Pesanan sudah diambil oleh kurir lain.'
+                );
+
+                $payment = Payment::query()
+                    ->where('order_id', $lockedOrder->id)
+                    ->lockForUpdate()
+                    ->first();
+
+                abort_if($payment === null, 409, 'Metode pembayaran pesanan belum dipilih.');
+                abort_unless(
+                    in_array($payment->payment_method, [
+                        PaymentMethod::CASH->value,
+                        PaymentMethod::QRIS->value,
+                    ], true),
+                    409,
+                    'Metode pembayaran pesanan tidak valid.'
+                );
+
+                $assignment = CourierAssignment::create([
+                    'order_id' => $lockedOrder->id,
+                    'courier_id' => $courierId,
+                    'status' => AssignmentStatus::ASSIGNED->value,
+                    'assigned_at' => now(),
+                ]);
+
+                $previousStatus = $lockedOrder->order_status;
+                $lockedOrder->update(['order_status' => OrderStatus::DITUGASKAN->value]);
+                $lockedOrder->statusHistories()->create([
+                    'from_status' => $previousStatus,
+                    'to_status' => OrderStatus::DITUGASKAN->value,
+                    'changed_by_user_id' => $request->user()->id,
+                    'changed_at' => now(),
+                    'note' => 'Pesanan diklaim oleh kurir melalui Open Delivery Pool.',
+                ]);
+
+                return $assignment;
+            });
+        } catch (HttpExceptionInterface $exception) {
+            throw $exception;
+        } catch (QueryException $exception) {
+            return $this->serverError($exception, 'claim', new CourierAssignment([
+                'order_id' => $order->id,
+                'courier_id' => $courierId,
+            ]));
+        } catch (Exception $exception) {
+            return $this->serverError($exception, 'claim', new CourierAssignment([
+                'order_id' => $order->id,
+                'courier_id' => $courierId,
+            ]));
+        }
+
+        $claimedOrder = Order::query()->with('customer.user')->findOrFail($order->id);
+
+        // Beri tahu pelanggan bahwa kurir sudah mengambil pesanan.
+        event(new BusinessActionOccurred(
+            userId: $claimedOrder->customer->user_id,
+            type: 'COURIER_ASSIGNED',
+            title: 'Kurir Mengambil Pesanan',
+            body: 'Pesanan Anda telah diambil oleh kurir.',
+            data: [
+                'order_id' => $claimedOrder->id,
+                'assignment_id' => $assignment->id,
+            ],
+        ));
+
+        // Beri tahu Owner untuk monitoring, bukan meminta persetujuan.
+        User::query()
+            ->whereHas('role', fn ($query) => $query->where('name', 'OWNER'))
+            ->pluck('id')
+            ->each(fn (int $ownerUserId) => event(new BusinessActionOccurred(
+                userId: $ownerUserId,
+                type: 'COURIER_ASSIGNED',
+                title: 'Pesanan Diambil Kurir',
+                body: 'Seorang kurir telah mengambil tugas pengantaran.',
+                data: [
+                    'order_id' => $claimedOrder->id,
+                    'assignment_id' => $assignment->id,
+                ],
+            )));
+
+        return response()->json([
+            'data' => $this->assignmentData($assignment),
+            'message' => 'Pesanan berhasil diklaim. Periksa status pembayaran sebelum memulai pengantaran.',
+        ], 201);
     }
 
     public function index(Request $request): JsonResponse
@@ -167,6 +384,21 @@ class CourierController extends Controller
                     && $order->order_status === OrderStatus::DITUGASKAN->value,
                     409,
                     'Pengantaran tidak dapat dimulai karena status pengantaran tidak sesuai.'
+                );
+
+                // QRIS wajib sudah diverifikasi (PAID) sebelum kurir memulai.
+                // CASH boleh dimulai saat PENDING karena konfirmasi uang diterima
+                // memang dilakukan kurir selama pengantaran aktif.
+                $payment = Payment::query()->where('order_id', $order->id)->lockForUpdate()->first();
+                abort_if($payment === null, 409, 'Pembayaran pesanan tidak ditemukan.');
+                abort_unless(
+                    $payment->payment_method === PaymentMethod::CASH->value
+                        || (
+                            $payment->payment_method === PaymentMethod::QRIS->value
+                            && $payment->payment_status === PaymentStatus::PAID->value
+                        ),
+                    409,
+                    'Pengantaran belum dapat dimulai sebelum pembayaran QRIS diverifikasi Owner.'
                 );
 
                 abort_if(

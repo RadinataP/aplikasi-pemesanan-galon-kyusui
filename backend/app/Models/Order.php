@@ -20,6 +20,11 @@ class Order extends Model
     protected $fillable = [
         'order_number',
         'customer_id',
+        'source',
+        'created_by_user_id',
+        'customer_name',
+        'customer_phone',
+        'fulfillment_type',
         'order_status',
         'subtotal_amount',
         'delivery_fee',
@@ -65,6 +70,11 @@ class Order extends Model
         $sequence = (int) static::query()->max('id') + 1;
 
         return sprintf('ORD-%s-%04d', Carbon::instance($placedAt)->format('Ymd'), $sequence);
+    }
+
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by_user_id');
     }
 
     public function customer()

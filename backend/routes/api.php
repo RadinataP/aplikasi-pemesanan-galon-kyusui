@@ -2,7 +2,10 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CourierController;
+use App\Http\Controllers\Api\CourierDutyController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\FinanceController;
+use App\Http\Controllers\Api\DirectOrderController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\OwnerController;
@@ -53,6 +56,18 @@ Route::prefix('v1')->group(function () {
             ->get('dashboard/courier', [DashboardController::class, 'courier'])
             ->name('api.v1.dashboard.courier');
 
+        // --- Pembukuan dan pesanan langsung (fitur baru) ---
+        Route::middleware('role:OWNER')->prefix('owner')->group(function () {
+            Route::get('finance/transactions', [FinanceController::class, 'index'])->name('api.v1.owner.finance.index');
+            // Pemasukan manual hanya untuk uang di luar alur order aplikasi.
+            Route::post('finance/incomes', [FinanceController::class, 'storeIncome'])->name('api.v1.owner.finance.incomes.store');
+            Route::post('finance/expenses', [FinanceController::class, 'storeExpense'])->name('api.v1.owner.finance.expenses.store');
+            Route::post('direct-orders', [DirectOrderController::class, 'store'])->name('api.v1.owner.direct-orders.store');
+        });
+        // Route pesanan langsung kurir didaftarkan hanya sekali di grup
+        // COURIER di bawah. Jangan deklarasikan ulang di sini karena dapat
+        // menimbulkan route name yang bertabrakan atau perilaku tak konsisten.
+
         // --- CUSTOMER PROFILE (spec 06 section 9.1 dan 9.2) ---
         Route::middleware('role:CUSTOMER')->group(function () {
             Route::get('customer/profile', [ProfileController::class, 'customerProfile'])
@@ -80,7 +95,7 @@ Route::prefix('v1')->group(function () {
         Route::get('products/{product}', [ProductController::class, 'show'])->name('api.v1.products.show');
 
         // --- CUSTOMER ORDER (spec 06 section 9.4 - 9.7) ---
-        Route::middleware(['role:CUSTOMER', 'throttle:5,1'])->prefix('customer/orders')->group(function () {
+        Route::middleware(['role:CUSTOMER', 'throttle:30,1'])->prefix('customer/orders')->group(function () {
             Route::get('/', [OrderController::class, 'index'])->name('api.v1.customer.orders.index');
             Route::post('/', [OrderController::class, 'store'])->name('api.v1.customer.orders.store');
             Route::get('/{order}', [OrderController::class, 'show'])->name('api.v1.customer.orders.show');
@@ -139,8 +154,16 @@ Route::prefix('v1')->group(function () {
         // Deviasi ini decided owner project dan saat ini dipakai penuh oleh klien
         // Android, jadi route tidak dihapus pada Phase B.
         Route::prefix('courier')->middleware('role:COURIER')->group(function () {
+            Route::post('direct-orders', [DirectOrderController::class, 'store'])
+                ->name('api.v1.courier.direct-orders.store');
             Route::post('orders/{order}/payment-confirmation', [CourierController::class, 'confirmOrderPayment'])
                 ->name('api.v1.courier.orders.payment-confirmation');
+            // Open Delivery Pool: semua kurir aktif dapat melihat dan mengklaim
+            // pesanan yang belum memiliki assignment.
+            Route::get('open-orders', [CourierController::class, 'openOrders'])
+                ->name('api.v1.courier.open-orders.index');
+            Route::post('open-orders/{order}/claim', [CourierController::class, 'claimOrder'])
+                ->name('api.v1.courier.open-orders.claim');
             Route::get('assignments', [CourierController::class, 'index'])->name('api.v1.courier.assignments.index');
             Route::get('assignments/{assignment}', [CourierController::class, 'show'])->name('api.v1.courier.assignments.show');
             Route::post('assignments/{assignment}/start', [CourierController::class, 'start'])->name('api.v1.courier.assignments.start');
@@ -151,6 +174,20 @@ Route::prefix('v1')->group(function () {
                 ->name('api.v1.courier.assignments.location');
             Route::post('assignments/{assignment}/cash/confirm', [CourierController::class, 'cash'])->name('api.v1.courier.assignments.cash.confirm');
             Route::post('assignments/{assignment}/complete', [CourierController::class, 'complete'])->name('api.v1.courier.assignments.complete');
+
+            // Sesi bertugas (on-duty) tanpa assignment aktif. Endpoint ini
+            // merupakan kontrak baru (ditambahkan pada fase ini), bukan bagian
+            // dari katalog spec 06, karena spec tidak mendefinisikan konsep
+            // kurir "bertugas" tanpa pengantaran. Tracking customer tetap
+            // assignment-centric dan tidak terpengaruh.
+            Route::get('duty', [CourierDutyController::class, 'show'])->name('api.v1.courier.duty.show');
+            Route::post('duty/start', [CourierDutyController::class, 'start'])->name('api.v1.courier.duty.start');
+            Route::post('duty/stop', [CourierDutyController::class, 'stop'])->name('api.v1.courier.duty.stop');
+            // Throttle sama dengan location assignment: 120 req/menit per kurir.
+            // Interval klien 30s (COURIER_SUBMISSION_INTERVAL_MS) menyisakan headroom 4x.
+            Route::middleware('throttle:120,1')
+                ->post('duty/location', [CourierDutyController::class, 'location'])
+                ->name('api.v1.courier.duty.location');
         });
     });
 });

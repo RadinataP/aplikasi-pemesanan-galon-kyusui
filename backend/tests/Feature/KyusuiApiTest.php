@@ -39,19 +39,19 @@ class KyusuiApiTest extends TestCase
         $response = $this->withToken($token)->postJson('/api/v1/customer/orders', [
             'items' => [['product_id' => 1, 'quantity' => 2]],
             'delivery_location' => [
-                'latitude' => -6.2,
-                'longitude' => 106.816666,
+                'latitude' => (float) config('kyusui.service_area.latitude'),
+                'longitude' => (float) config('kyusui.service_area.longitude'),
                 'address' => 'Jl. Test',
             ],
             'payment_method' => 'CASH',
         ]);
 
         $response->assertCreated()
-            ->assertJsonPath('data.total_amount', '35000.00')
+            ->assertJsonPath('data.total_amount', '32000.00')
             ->assertJsonPath('data.order_status', 'MENUNGGU_PEMBAYARAN')
             ->assertJsonPath('data.items.0.product_name', 'Galon');
         $this->assertDatabaseHas('payment_status_histories', ['to_status' => 'PENDING']);
-        $this->assertDatabaseHas('orders', ['order_status' => 'MENUNGGU_PEMBAYARAN', 'total_amount' => 35000]);
+        $this->assertDatabaseHas('orders', ['order_status' => 'MENUNGGU_PEMBAYARAN', 'total_amount' => 32000]);
     }
 
     public function test_cash_payment_selection_moves_order_to_processing_queue(): void
@@ -60,7 +60,7 @@ class KyusuiApiTest extends TestCase
 
         $order = $this->actingAs($user)->postJson('/api/v1/customer/orders', [
             'items' => [['product_id' => 1, 'quantity' => 1]],
-            'delivery_location' => ['latitude' => -6.2, 'longitude' => 106.816666, 'address' => 'Jl. Test'],
+            'delivery_location' => ['latitude' => (float) config('kyusui.service_area.latitude'), 'longitude' => (float) config('kyusui.service_area.longitude'), 'address' => 'Jl. Test'],
         ])->assertCreated()->json('data');
 
         $this->actingAs($user)->postJson('/api/v1/customer/orders/'.$order['id'].'/payment', ['payment_method' => 'CASH'])

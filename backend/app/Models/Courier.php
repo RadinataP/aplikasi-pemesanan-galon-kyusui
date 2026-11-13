@@ -22,4 +22,17 @@ class Courier extends Model
     {
         return $this->hasMany(CourierLocation::class);
     }
+
+    public function dutySessions()
+    {
+        return $this->hasMany(CourierDutySession::class);
+    }
+
+    /**
+     * Sesi bertugas yang sedang berjalan (`ended_at` NULL), atau null.
+     */
+    public function activeDutySession()
+    {
+        return $this->hasOne(CourierDutySession::class)->whereNull('ended_at');
+    }
 }

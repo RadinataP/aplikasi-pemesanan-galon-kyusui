@@ -160,11 +160,16 @@ class OwnerController extends Controller
                 ->whereKey($validated['courier_id'])
                 ->lockForUpdate()
                 ->firstOrFail();
-            abort_if(
-                $courier->assignments()->where('status', AssignmentStatus::ACTIVE->value)->exists(),
+            abort_unless(
+                $courier->user !== null
+                    && $courier->user->status === 'ACTIVE'
+                    && $courier->user->role?->name === 'COURIER',
                 409,
-                'Kurir sedang mengantarkan pesanan lain.',
+                'Akun kurir tidak aktif atau profil kurir tidak valid.',
             );
+            // Multi-assignment policy: satu kurir boleh menerima banyak pesanan.
+            // Lock baris courier di atas menserialisasi assignment baru untuk kurir
+            // yang sama; status setiap pesanan tetap divalidasi dan dikunci sendiri.
             $lockedOrder = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
             abort_unless(
                 $lockedOrder->order_status === OrderStatus::DIPROSES->value,
@@ -221,17 +226,35 @@ class OwnerController extends Controller
     {
         $this->authorizeOwner($request);
 
-        $busyCourierIds = CourierAssignment::query()
-            ->where('status', AssignmentStatus::ACTIVE->value)
-            ->pluck('courier_id');
+        // Hanya profil yang benar-benar dapat digunakan sebagai Courier.
+        // Role COURIER saja tidak cukup: login dapat berhasil walaupun profil
+        // `couriers` belum dibuat, sedangkan endpoint delivery memerlukan profil itu.
+        $eligibleCouriers = Courier::query()
+            ->whereHas('user', function ($query): void {
+                $query->where('status', 'ACTIVE')
+                    ->whereHas('role', fn ($roleQuery) => $roleQuery->where('name', 'COURIER'));
+            });
 
-        $availableCouriers = Courier::with('user:id,name')
-            ->whereNotIn('id', $busyCourierIds)
+        // Kurir aktif tetap dapat dipilih walaupun sudah mempunyai penugasan.
+        // `available_count` berarti jumlah profil kurir yang dapat ditugaskan
+        // oleh Owner, bukan jumlah kurir yang sama sekali belum punya tugas.
+        $couriers = (clone $eligibleCouriers)
+            ->with('user:id,name')
+            ->orderBy('id')
             ->get();
 
+        $eligibleCount = $couriers->count();
+        $message = $eligibleCount === 0
+            ? 'Belum ada profil kurir aktif. Periksa akun COURIER dan relasinya pada tabel couriers.'
+            : 'Data kurir aktif berhasil dimuat.';
+
         return response()->json([
-            'data' => $availableCouriers,
-            'message' => 'Data kurir tersedia berhasil dimuat.',
+            'data' => $couriers,
+            'meta' => [
+                'eligible_count' => $eligibleCount,
+                'available_count' => $couriers->count(),
+            ],
+            'message' => $message,
         ], 200);
     }
 

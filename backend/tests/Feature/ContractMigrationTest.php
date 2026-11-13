@@ -94,6 +94,21 @@ class ContractMigrationTest extends TestCase
             ->assertNotFound();
     }
 
+    public function test_courier_direct_order_route_is_registered_once_at_canonical_uri(): void
+    {
+        // Ambil seluruh route POST yang memakai nama route kontrak kurir.
+        // Ini mengunci agar route lama/duplikat tidak muncul lagi.
+        $matches = collect(app('router')->getRoutes()->getRoutes())
+            ->filter(fn ($route) => $route->methods()[0] === 'POST'
+                && $route->uri() === 'api/v1/courier/direct-orders');
+
+        $this->assertCount(1, $matches);
+        $this->assertSame(
+            'api.v1.courier.direct-orders.store',
+            $matches->first()->getName()
+        );
+    }
+
     public function test_qris_image_is_served_from_a_single_deduplicated_route(): void
     {
         $user = User::factory()->create([

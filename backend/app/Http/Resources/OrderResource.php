@@ -30,11 +30,34 @@ class OrderResource extends JsonResource
             'id' => $this->id,
             'order_number' => $this->order_number,
             'customer_id' => $this->customer_id,
+            // Metadata sumber transaksi untuk membedakan order aplikasi dan order langsung.
+            'source' => $this->source ?? 'APP',
+            'created_by_user_id' => $this->created_by_user_id,
+            'customer_name' => $this->customer_name,
+            'customer_phone' => $this->customer_phone,
+            'fulfillment_type' => $this->fulfillment_type ?? 'DELIVERY',
             'items' => OrderItemResource::collection($this->whenLoaded('items')),
             'subtotal_amount' => $this->subtotal_amount,
             'delivery_fee' => $this->delivery_fee,
             'total_amount' => $this->total_amount,
             'order_status' => $this->order_status,
+
+            // Koordinat dan alamat tujuan harus dikirim kembali ke Android.
+            // Tracking memakai latitude/longitude ini untuk marker tujuan dan
+            // routing OSRM; tanpa field ini Android hanya menerima null.
+            // Field tetap disertakan untuk pickup, dengan nilai null jika
+            // pesanan memang tidak memiliki alamat pengantaran.
+            'delivery_location' => $this->fulfillment_type === 'PICKUP'
+                ? null
+                : [
+                    'address' => $this->delivery_address,
+                    'latitude' => $this->delivery_latitude === null
+                        ? null
+                        : (float) $this->delivery_latitude,
+                    'longitude' => $this->delivery_longitude === null
+                        ? null
+                        : (float) $this->delivery_longitude,
+                ],
             'payment' => $payment === null ? null : [
                 'id' => $payment->id,
                 'payment_method' => $payment->payment_method,

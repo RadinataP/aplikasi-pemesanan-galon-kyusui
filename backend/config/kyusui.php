@@ -1,32 +1,25 @@
 <?php
 
 return [
+    /*
+    | Upload rules: QRIS proof and owner QRIS image use the same allowlist
+    | and limit. Keep these keys when adding other KYUSUI configuration.
+    */
+    'max_kilobytes' => (int) env('KYUSUI_UPLOAD_MAX_KILOBYTES', 5120),
+    'image_mimes' => env('KYUSUI_IMAGE_MIMES', 'jpg,jpeg,png'),
 
     /*
-    |--------------------------------------------------------------------------
-    | Upload Limits
-    |--------------------------------------------------------------------------
-    |
-    | Batas ukuran dan daftar format gambar untuk seluruh file upload yang
-    | diterima backend.
-    |
-    | Nilai dikunci oleh spesifikasi dan tidak boleh diubah tanpa perubahan
-    | spesifikasi:
-    |
-    |   - Bukti pembayaran QRIS maksimum 5 MB, format JPG/JPEG/PNG
-    |     (spec 08 section 11.1, spec 08 section 40, spec 08 section 48
-    |      keputusan 7, test spec 11 PAY-005).
-    |   - Nilai yang sama berlaku untuk gambar QRIS yang diunggah owner
-    |     (spec 06 section 13.2).
-    |
-    | Spec 06 section 11.2 mewajibkan nilai ini berada pada configuration
-    | constant backend dan bukan literal hard-coded di controller maupun di
-    | Android, supaya kedua sisi memakai sumber nilai yang sama.
-    |
+    | Temporary service area defaults preserve the previously hard-coded
+    | coordinates. Replace them only after Berkah Water's actual depot point
+    | and service radius have been confirmed.
     */
-
-    'max_kilobytes' => 5120,
-
-    'image_mimes' => 'jpg,jpeg,png',
-
+    'service_area' => [
+        'latitude' => (float) env('KYUSUI_SERVICE_AREA_LATITUDE', -0.8107389),
+        'longitude' => (float) env('KYUSUI_SERVICE_AREA_LONGITUDE', 100.3709844),
+        'radius_km' => (float) env('KYUSUI_SERVICE_AREA_RADIUS_KM', 10),
+    ],
+    'delivery' => [
+        // Keputusan bisnis: Rp1.000 per galon. Jarak hanya untuk validasi area.
+        'fee_per_gallon' => (int) env('KYUSUI_DELIVERY_FEE_PER_GALLON', 1000),
+    ],
 ];
