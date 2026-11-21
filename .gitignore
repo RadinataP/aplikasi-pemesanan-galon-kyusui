@@ -1,3 +1,27 @@
-backend/.env.justtest.txt
+# Environment dan konfigurasi rahasia
+.env
+.env.*
+!.env.example
+!.env.testing.example
 
+# Backend Laravel
+/backend/vendor/
+/backend/node_modules/
+/backend/storage/*.key
+
+# Android
+/android/.gradle/
+/android/**/build/
+/android/local.properties
+/android/.idea/
+
+# Java Development Kit
 /jdk17/
+
+# IDE
+.idea/
+.vscode/
+
+# Sistem operasi
+.DS_Store
+Thumbs.db
