@@ -1,22 +1,53 @@
 ![KYŪSUI — Aplikasi Pemesanan Galon Berkah Water](docs/assets/kyusui-banner.svg)
 
-# KYŪSUI — BERKAH WATER
+# Aplikasi Pemesanan Galon KYŪSUI — Berkah Water
 
-**Aplikasi Pemesanan Galon Berkah Water**
+<p align="center">
+  <strong>Aplikasi Pemesanan Galon Berkah Water</strong><br>
+  Platform Android untuk pemesanan, pembayaran, pengelolaan pesanan, dan pengantaran air galon.
+</p>
 
-Aplikasi Android untuk pemesanan air galon, pengelolaan pesanan, pembayaran, dan proses pengantaran yang terhubung dengan backend Laravel.
+<p align="center">
+  <a href="https://github.com/RadinataP/aplikasi-pemesanan-galon-kyusui"><strong>Repository GitHub</strong></a>
+  &nbsp;·&nbsp;
+  <a href="#panduan-instalasi"><strong>Instalasi</strong></a>
+  &nbsp;·&nbsp;
+  <a href="#fitur-utama"><strong>Fitur</strong></a>
+  &nbsp;·&nbsp;
+  <a href="#lisensi"><strong>Lisensi MIT</strong></a>
+</p>
 
-[Repository](https://github.com/RadinataP/kyusui) · **Android Native** · **Laravel REST API** · **MySQL**
+<p align="center">
+  <code>Android Native</code>
+  <code>Kotlin</code>
+  <code>Jetpack Compose</code>
+  <code>Laravel REST API</code>
+  <code>MySQL</code>
+</p>
+
+> **Nama repository:** `aplikasi-pemesanan-galon-kyusui`  
+> **Nama aplikasi:** KYŪSUI — Berkah Water  
+> **Tujuan:** mendukung proses pemesanan dan pengantaran galon Berkah Water.
 
 ---
 
-## Navigasi
+## Daftar isi
 
-[ Tentang ](#tentang-aplikasi) · [ Fitur ](#fitur-utama) · [ Arsitektur ](#arsitektur-sistem) · [ Instalasi ](#panduan-instalasi) · [ API ](#api-backend) · [ Lisensi ](#lisensi)
+- [Tentang aplikasi](#tentang-aplikasi)
+- [Fitur dan peran pengguna](#fitur-utama)
+- [Arsitektur sistem](#arsitektur-sistem)
+- [Teknologi](#teknologi)
+- [Struktur repository](#struktur-repository)
+- [Panduan instalasi](#panduan-instalasi)
+- [Build APK](#build-apk)
+- [API backend](#api-backend)
+- [Pengujian dan troubleshooting](#pengujian)
+- [Keamanan](#keamanan-sebelum-deployment)
+- [Lisensi](#lisensi)
 
 ## Tentang aplikasi
 
-**KYŪSUI — Berkah Water** adalah aplikasi pemesanan galon berbasis Android yang dikembangkan untuk mendukung proses operasional Berkah Water. Aplikasi Android berkomunikasi dengan backend Laravel melalui REST API. Backend menangani autentikasi, otorisasi berdasarkan peran, proses pesanan, pembayaran, dan penyimpanan data.
+**KYŪSUI — Berkah Water** (repository **`aplikasi-pemesanan-galon-kyusui`**) adalah aplikasi pemesanan galon berbasis Android yang dikembangkan untuk mendukung proses operasional Berkah Water. Aplikasi Android berkomunikasi dengan backend Laravel melalui REST API. Backend menangani autentikasi, otorisasi berdasarkan peran, proses pesanan, pembayaran, dan penyimpanan data.
 
 Dokumentasi ini menjelaskan gambaran sistem, kebutuhan perangkat, cara menyiapkan backend, cara menghubungkan aplikasi Android, serta langkah build dan pengujian.
 
@@ -159,7 +190,7 @@ Struktur dapat berkembang mengikuti implementasi. File dependency hasil instalas
 Jalankan dari terminal:
 
 ```bash
-git clone https://github.com/RadinataP/kyusui.git
+git clone https://github.com/RadinataP/aplikasi-pemesanan-galon-kyusui.git
 cd kyusui
 ```
 
@@ -502,7 +533,7 @@ Pemberian lisensi ini tidak berarti seluruh ide, konsep, dependency, library, lo
 Jika mengadaptasi project ini, mohon pertahankan pemberitahuan hak cipta dan cantumkan atribusi kepada project asal:
 
 **KYŪSUI — Berkah Water**  
-Repository asal: https://github.com/RadinataP/kyusui  
+Repository asal: https://github.com/RadinataP/aplikasi-pemesanan-galon-kyusui  
 Copyright (c) 2026 RadinataP
 
 Lihat file [`LICENSE`](LICENSE) untuk teks lisensi lengkap. Sebelum publikasi, pastikan pemegang hak cipta yang dicantumkan memang pihak yang berwenang melisensikan kode tersebut.
