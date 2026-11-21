@@ -1,23 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="520" viewBox="0 0 1600 520" role="img" aria-labelledby="title desc">
-<title id="title">KYŪSUI — Berkah Water</title><desc id="desc">Banner dokumentasi aplikasi pemesanan galon Berkah Water.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="540" viewBox="0 0 1600 540" role="img" aria-labelledby="title desc">
+<title id="title">Berkah Water — KYŪSUI</title>
+<desc id="desc">Identitas aplikasi pemesanan galon Berkah Water dengan latar biru laut, gelombang air, dan simbol tetesan air.</desc>
 <defs>
- <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#071B2B"/><stop offset=".55" stop-color="#0B4055"/><stop offset="1" stop-color="#087E8B"/></linearGradient>
- <linearGradient id="drop" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#B8F3FF"/><stop offset="1" stop-color="#3BC6D6"/></linearGradient>
- <radialGradient id="glow"><stop stop-color="#38D6DF" stop-opacity=".32"/><stop offset="1" stop-color="#38D6DF" stop-opacity="0"/></radialGradient>
+ <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#06283B"/><stop offset=".58" stop-color="#07516A"/><stop offset="1" stop-color="#087F88"/></linearGradient>
+ <linearGradient id="drop" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#A7F1F4"/><stop offset="1" stop-color="#39C5D2"/></linearGradient>
 </defs>
-<rect width="1600" height="520" rx="34" fill="url(#bg)"/>
-<circle cx="1310" cy="130" r="330" fill="url(#glow)"/><circle cx="1450" cy="440" r="240" fill="url(#glow)"/>
-<path d="M0 390 C220 330 360 470 590 405 S980 330 1190 400 S1450 475 1600 385 V520 H0Z" fill="#0A6C7B" opacity=".42"/>
-<path d="M0 430 C260 360 390 500 650 425 S1030 365 1240 430 S1460 475 1600 420" fill="none" stroke="#7CE8EA" stroke-opacity=".3" stroke-width="3"/>
-<g transform="translate(1110 92)">
- <path d="M142 0 C112 52 42 126 42 198 a100 100 0 0 0 200 0 C242 126 172 52 142 0Z" fill="url(#drop)" opacity=".95"/>
- <path d="M94 191 C105 157 132 136 159 115" fill="none" stroke="#FFFFFF" stroke-opacity=".72" stroke-width="12" stroke-linecap="round"/>
- <circle cx="220" cy="75" r="15" fill="#DDFBFF" opacity=".8"/>
+<rect width="1600" height="540" rx="28" fill="url(#bg)"/>
+<rect x="2" y="2" width="1596" height="536" rx="26" fill="none" stroke="#B9E9EC" stroke-opacity=".45" stroke-width="3"/>
+<path d="M0 390 C180 330 300 430 500 385 S830 355 1030 395 S1370 450 1600 370 V540 H0Z" fill="#0A7580" opacity=".32"/>
+<path d="M0 430 C210 365 340 465 545 420 S875 385 1080 430 S1390 475 1600 410" fill="none" stroke="#77DDE0" stroke-opacity=".42" stroke-width="3"/>
+<path d="M0 455 C220 390 350 490 560 445 S880 410 1090 455 S1400 500 1600 435" fill="none" stroke="#77DDE0" stroke-opacity=".18" stroke-width="2"/>
+<g fill="#B9EEF0" opacity=".8"><circle cx="1030" cy="120" r="5"/><circle cx="1130" cy="72" r="4"/><circle cx="1170" cy="190" r="8"/><circle cx="1325" cy="245" r="5"/><circle cx="930" cy="330" r="4"/></g>
+<g font-family="Arial,Helvetica,sans-serif">
+ <text x="105" y="185" fill="#B5F0F1" font-size="27" font-weight="700" letter-spacing="8">BERKAH WATER</text>
+ <text x="100" y="285" fill="#FFFFFF" font-size="100" font-weight="800" letter-spacing="1">KYŪSUI</text>
+ <text x="105" y="345" fill="#F2FCFC" font-size="34">Aplikasi Pemesanan Galon</text>
+ <text x="105" y="395" fill="#C5E9ED" font-size="23">Android · Laravel REST API · MySQL</text>
+ <path d="M108 438H345" stroke="#7DE4E5" stroke-width="4" stroke-linecap="round"/>
 </g>
-<g fill="#DDFBFF" opacity=".7"><circle cx="1010" cy="120" r="5"/><circle cx="1050" cy="200" r="8"/><circle cx="1480" cy="245" r="6"/><circle cx="1370" cy="55" r="4"/><circle cx="920" cy="330" r="5"/></g>
-<text x="105" y="190" fill="#8BE7EE" font-family="Inter,Arial,sans-serif" font-size="25" font-weight="700" letter-spacing="8">BERKAH WATER</text>
-<text x="100" y="292" fill="#FFFFFF" font-family="Inter,Arial,sans-serif" font-size="100" font-weight="800" letter-spacing="2">KYŪSUI</text>
-<text x="108" y="355" fill="#D9F5F7" font-family="Inter,Arial,sans-serif" font-size="31" font-weight="500">Aplikasi Pemesanan Galon</text>
-<text x="108" y="402" fill="#B9E7EC" font-family="Inter,Arial,sans-serif" font-size="23">Android · Laravel REST API · MySQL</text>
-<rect x="108" y="442" width="245" height="4" rx="2" fill="#54D5DE"/>
+<path d="M1260 95 C1212 170 1165 227 1165 295 A95 95 0 0 0 1355 295 C1355 227 1308 170 1260 95Z" fill="url(#drop)"/>
+<path d="M1217 282 C1227 253 1247 230 1277 208" fill="none" stroke="#E9FFFF" stroke-width="12" stroke-linecap="round" opacity=".75"/>
 </svg>

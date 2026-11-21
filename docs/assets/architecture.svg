@@ -1,28 +1,57 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="620" viewBox="0 0 1400 620" role="img">
-<title>Arsitektur sistem KYŪSUI</title>
-<rect width="1400" height="620" rx="28" fill="#071B2B"/>
-<text x="700" y="66" fill="#E9FAFC" font-family="Arial,sans-serif" font-size="34" font-weight="700" text-anchor="middle">ARSITEKTUR SISTEM KYŪSUI</text>
-<g font-family="Arial,sans-serif">
- <rect x="70" y="160" width="340" height="300" rx="22" fill="#10394D" stroke="#4ACAD4" stroke-width="3"/>
- <text x="240" y="215" fill="#7BE3E8" font-size="27" font-weight="700" text-anchor="middle">ANDROID APP</text>
- <text x="240" y="270" fill="#FFFFFF" font-size="22" text-anchor="middle">Kotlin · Jetpack Compose</text>
- <text x="240" y="310" fill="#D1EAF0" font-size="20" text-anchor="middle">MVVM · ViewModel</text>
- <text x="240" y="350" fill="#D1EAF0" font-size="20" text-anchor="middle">Repository · Hilt</text>
- <text x="240" y="390" fill="#D1EAF0" font-size="20" text-anchor="middle">Retrofit · OkHttp</text>
- <rect x="530" y="160" width="340" height="300" rx="22" fill="#124C58" stroke="#58D5D4" stroke-width="3"/>
- <text x="700" y="215" fill="#9AF0E8" font-size="27" font-weight="700" text-anchor="middle">LARAVEL API</text>
- <text x="700" y="270" fill="#FFFFFF" font-size="22" text-anchor="middle">REST API · Sanctum</text>
- <text x="700" y="310" fill="#D1EAF0" font-size="20" text-anchor="middle">Controllers · Validation</text>
- <text x="700" y="350" fill="#D1EAF0" font-size="20" text-anchor="middle">Role Middleware</text>
- <text x="700" y="390" fill="#D1EAF0" font-size="20" text-anchor="middle">Eloquent ORM</text>
- <rect x="990" y="160" width="340" height="300" rx="22" fill="#10394D" stroke="#4ACAD4" stroke-width="3"/>
- <text x="1160" y="215" fill="#7BE3E8" font-size="27" font-weight="700" text-anchor="middle">DATA &amp; SERVICES</text>
- <text x="1160" y="270" fill="#FFFFFF" font-size="22" text-anchor="middle">MySQL Database</text>
- <text x="1160" y="310" fill="#D1EAF0" font-size="20" text-anchor="middle">File Storage</text>
- <text x="1160" y="350" fill="#D1EAF0" font-size="20" text-anchor="middle">Payment Proof</text>
- <text x="1160" y="390" fill="#D1EAF0" font-size="20" text-anchor="middle">FCM (opsional)</text>
- <g stroke="#9AF0E8" stroke-width="5" fill="none"><path d="M420 310 H510"/><path d="M500 296 L516 310 L500 324"/><path d="M880 310 H970"/><path d="M960 296 L976 310 L960 324"/></g>
- <text x="465" y="280" fill="#C6F4F4" font-size="17" text-anchor="middle">HTTPS / JSON</text>
- <text x="925" y="280" fill="#C6F4F4" font-size="17" text-anchor="middle">Query / Storage</text>
- <text x="700" y="535" fill="#A9CFD6" font-size="19" text-anchor="middle">Alur ringkas — detail implementasi mengikuti source code repository</text>
-</g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="650" viewBox="0 0 1600 650" role="img" aria-labelledby="title desc">
+<title id="title">Arsitektur Sistem KYŪSUI</title>
+<desc id="desc">Diagram sederhana hubungan aplikasi Android, Laravel REST API, dan database serta layanan pendukung.</desc>
+<defs>
+ <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#06283B"/><stop offset=".58" stop-color="#07516A"/><stop offset="1" stop-color="#087F88"/></linearGradient>
+ <style>
+ .f{font-family:Arial,Helvetica,sans-serif}
+ .head{fill:#fff;font-size:39px;font-weight:700}
+ .sub{fill:#C5E9ED;font-size:20px}
+ .card{fill:#082F43;fill-opacity:.78;stroke:#65D8DC;stroke-width:2}
+ .ct{fill:#B5F0F1;font-size:25px;font-weight:700}
+ .tx{fill:#F2FCFC;font-size:22px}
+ .sm{fill:#C5E9ED;font-size:17px}
+ </style>
+ <marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#8BE8E7"/></marker>
+</defs>
+<rect width="1600" height="650" rx="28" fill="url(#bg)"/>
+<rect x="2" y="2" width="1596" height="646" rx="26" fill="none" stroke="#B9E9EC" stroke-opacity=".45" stroke-width="3"/>
+<g fill="#B9EEF0" opacity=".65"><circle cx="1340" cy="92" r="4"/><circle cx="1440" cy="150" r="6"/><circle cx="1250" cy="180" r="3"/><circle cx="320" cy="95" r="4"/></g>
+<g class="f" text-anchor="middle">
+ <text x="800" y="82" class="head">ARSITEKTUR SISTEM KYŪSUI</text>
+ <text x="800" y="120" class="sub">Aplikasi Pemesanan Galon Berkah Water</text>
+</g>
+<g class="f">
+ <rect x="70" y="190" width="420" height="330" rx="20" class="card"/>
+ <text x="280" y="245" text-anchor="middle" class="ct">ANDROID APP</text>
+ <text x="280" y="300" text-anchor="middle" class="tx">Kotlin · Jetpack Compose</text>
+ <text x="280" y="345" text-anchor="middle" class="tx">MVVM · ViewModel</text>
+ <text x="280" y="390" text-anchor="middle" class="tx">Repository · Hilt</text>
+ <text x="280" y="435" text-anchor="middle" class="tx">Retrofit · OkHttp</text>
+ <text x="280" y="480" text-anchor="middle" class="sm">Aplikasi sisi pengguna</text>
+
+ <rect x="590" y="190" width="420" height="330" rx="20" class="card"/>
+ <text x="800" y="245" text-anchor="middle" class="ct">LARAVEL REST API</text>
+ <text x="800" y="300" text-anchor="middle" class="tx">REST API · Sanctum</text>
+ <text x="800" y="345" text-anchor="middle" class="tx">Controllers · Validation</text>
+ <text x="800" y="390" text-anchor="middle" class="tx">Role Middleware</text>
+ <text x="800" y="435" text-anchor="middle" class="tx">Eloquent ORM</text>
+ <text x="800" y="480" text-anchor="middle" class="sm">Logika dan layanan backend</text>
+
+ <rect x="1110" y="190" width="420" height="330" rx="20" class="card"/>
+ <text x="1320" y="245" text-anchor="middle" class="ct">DATA &amp; SERVICES</text>
+ <text x="1320" y="300" text-anchor="middle" class="tx">MySQL Database</text>
+ <text x="1320" y="345" text-anchor="middle" class="tx">File Storage</text>
+ <text x="1320" y="390" text-anchor="middle" class="tx">Payment Proof</text>
+ <text x="1320" y="435" text-anchor="middle" class="tx">FCM (opsional)</text>
+ <text x="1320" y="480" text-anchor="middle" class="sm">Penyimpanan dan layanan</text>
+</g>
+<g class="f" text-anchor="middle">
+ <path d="M500 355H575" stroke="#8BE8E7" stroke-width="4" marker-end="url(#arr)"/>
+ <text x="538" y="325" class="sm">HTTPS / JSON</text>
+ <path d="M1020 355H1095" stroke="#8BE8E7" stroke-width="4" marker-end="url(#arr)"/>
+ <text x="1058" y="325" class="sm">Query / Storage</text>
+ <text x="800" y="585" class="sub">Alur ringkas — detail implementasi mengikuti source code repository</text>
+</g>
+<path d="M0 610 C230 560 370 645 590 605 S960 575 1170 610 S1450 650 1600 590" fill="none" stroke="#77DDE0" stroke-opacity=".28" stroke-width="3"/>
+</svg>

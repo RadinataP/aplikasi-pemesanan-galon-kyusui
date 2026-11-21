@@ -1,14 +1,52 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="440" viewBox="0 0 1400 440" role="img">
-<title>Peran pengguna KYŪSUI</title><rect width="1400" height="440" rx="28" fill="#071B2B"/>
-<text x="700" y="65" text-anchor="middle" fill="#E9FAFC" font-family="Arial,sans-serif" font-size="34" font-weight="700">TIGA PERAN PENGGUNA</text>
-<g font-family="Arial,sans-serif">
- <rect x="65" y="120" width="390" height="250" rx="22" fill="#10394D" stroke="#4ACAD4" stroke-width="3"/>
- <text x="260" y="180" text-anchor="middle" fill="#7BE3E8" font-size="29" font-weight="700">CUSTOMER</text>
- <text x="260" y="235" text-anchor="middle" fill="#FFFFFF" font-size="21">Jelajahi produk</text><text x="260" y="273" text-anchor="middle" fill="#FFFFFF" font-size="21">Buat &amp; bayar pesanan</text><text x="260" y="311" text-anchor="middle" fill="#FFFFFF" font-size="21">Pantau pengiriman</text>
- <rect x="505" y="120" width="390" height="250" rx="22" fill="#124C58" stroke="#58D5D4" stroke-width="3"/>
- <text x="700" y="180" text-anchor="middle" fill="#9AF0E8" font-size="29" font-weight="700">OWNER</text>
- <text x="700" y="235" text-anchor="middle" fill="#FFFFFF" font-size="21">Kelola produk &amp; pesanan</text><text x="700" y="273" text-anchor="middle" fill="#FFFFFF" font-size="21">Verifikasi pembayaran</text><text x="700" y="311" text-anchor="middle" fill="#FFFFFF" font-size="21">Pantau operasional</text>
- <rect x="945" y="120" width="390" height="250" rx="22" fill="#10394D" stroke="#4ACAD4" stroke-width="3"/>
- <text x="1140" y="180" text-anchor="middle" fill="#7BE3E8" font-size="29" font-weight="700">COURIER</text>
- <text x="1140" y="235" text-anchor="middle" fill="#FFFFFF" font-size="21">Ambil penugasan</text><text x="1140" y="273" text-anchor="middle" fill="#FFFFFF" font-size="21">Perbarui status &amp; lokasi</text><text x="1140" y="311" text-anchor="middle" fill="#FFFFFF" font-size="21">Selesaikan pengantaran</text>
-</g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="560" viewBox="0 0 1600 560" role="img" aria-labelledby="title desc">
+<title id="title">Peran Pengguna KYŪSUI</title>
+<desc id="desc">Tiga peran pengguna aplikasi Berkah Water: Customer, Owner, dan Courier.</desc>
+<defs>
+ <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#06283B"/><stop offset=".58" stop-color="#07516A"/><stop offset="1" stop-color="#087F88"/></linearGradient>
+ <style>
+ .f{font-family:Arial,Helvetica,sans-serif}
+ .head{fill:#fff;font-size:39px;font-weight:700}
+ .sub{fill:#C5E9ED;font-size:20px}
+ .card{fill:#082F43;fill-opacity:.78;stroke:#65D8DC;stroke-width:2}
+ .ct{fill:#B5F0F1;font-size:29px;font-weight:700}
+ .tx{fill:#F2FCFC;font-size:21px}
+ .sm{fill:#C5E9ED;font-size:17px}
+ </style>
+</defs>
+<rect width="1600" height="560" rx="28" fill="url(#bg)"/>
+<rect x="2" y="2" width="1596" height="556" rx="26" fill="none" stroke="#B9E9EC" stroke-opacity=".45" stroke-width="3"/>
+<g fill="#B9EEF0" opacity=".65"><circle cx="1330" cy="82" r="4"/><circle cx="1450" cy="135" r="6"/><circle cx="1240" cy="150" r="3"/></g>
+<g class="f" text-anchor="middle">
+ <text x="800" y="78" class="head">PERAN PENGGUNA KYŪSUI</text>
+ <text x="800" y="116" class="sub">Pembagian akses dalam aplikasi Berkah Water</text>
+</g>
+<g class="f">
+ <rect x="70" y="165" width="450" height="300" rx="20" class="card"/>
+ <text x="295" y="225" text-anchor="middle" class="ct">CUSTOMER</text>
+ <text x="295" y="260" text-anchor="middle" class="sm">Pelanggan</text>
+ <path d="M115 282H475" stroke="#65D8DC" stroke-opacity=".55"/>
+ <text x="145" y="330" class="tx">• Jelajahi katalog produk</text>
+ <text x="145" y="375" class="tx">• Buat dan bayar pesanan</text>
+ <text x="145" y="420" class="tx">• Pantau status pengiriman</text>
+
+ <rect x="575" y="165" width="450" height="300" rx="20" class="card"/>
+ <text x="800" y="225" text-anchor="middle" class="ct">OWNER</text>
+ <text x="800" y="260" text-anchor="middle" class="sm">Pengelola usaha</text>
+ <path d="M620 282H980" stroke="#65D8DC" stroke-opacity=".55"/>
+ <text x="650" y="330" class="tx">• Kelola produk dan pesanan</text>
+ <text x="650" y="375" class="tx">• Verifikasi pembayaran</text>
+ <text x="650" y="420" class="tx">• Pantau operasional usaha</text>
+
+ <rect x="1080" y="165" width="450" height="300" rx="20" class="card"/>
+ <text x="1305" y="225" text-anchor="middle" class="ct">COURIER</text>
+ <text x="1305" y="260" text-anchor="middle" class="sm">Petugas pengantaran</text>
+ <path d="M1125 282H1485" stroke="#65D8DC" stroke-opacity=".55"/>
+ <text x="1155" y="330" class="tx">• Lihat tugas pengantaran</text>
+ <text x="1155" y="375" class="tx">• Perbarui status pesanan</text>
+ <text x="1155" y="420" class="tx">• Selesaikan proses antar</text>
+</g>
+<g class="f" text-anchor="middle">
+ <text x="800" y="510" class="sub">Hak akses mengikuti aturan otorisasi pada backend.</text>
+</g>
+<path d="M0 535 C230 495 370 550 590 530 S960 510 1170 535 S1450 560 1600 520" fill="none" stroke="#77DDE0" stroke-opacity=".25" stroke-width="2"/>
+</svg>
