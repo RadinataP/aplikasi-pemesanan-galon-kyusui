@@ -48,9 +48,9 @@
 </g>
 <g class="f" text-anchor="middle">
  <path d="M500 355H575" stroke="#8BE8E7" stroke-width="4" marker-end="url(#arr)"/>
- <text x="538" y="325" class="sm">HTTPS / JSON</text>
+ <text x="538" y="329" fill="#C5E9ED" font-size="14">HTTPS</text>
  <path d="M1020 355H1095" stroke="#8BE8E7" stroke-width="4" marker-end="url(#arr)"/>
- <text x="1058" y="325" class="sm">Query / Storage</text>
+ <text x="1058" y="329" fill="#C5E9ED" font-size="14">DATA</text>
  <text x="800" y="585" class="sub">Alur ringkas — detail implementasi mengikuti source code repository</text>
 </g>
 <path d="M0 610 C230 560 370 645 590 605 S960 575 1170 610 S1450 650 1600 590" fill="none" stroke="#77DDE0" stroke-opacity=".28" stroke-width="3"/>
