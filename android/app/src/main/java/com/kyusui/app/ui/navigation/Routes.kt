@@ -41,7 +41,7 @@ sealed interface AppRoute {
     data object CustomerCart : AppRoute
     data object CustomerCheckout : AppRoute
     data object CustomerOrderSummary : AppRoute
-    data object CustomerOrderList : AppRoute
+    data class CustomerOrderList(val filter: String? = null) : AppRoute
     data class CustomerOrderDetail(val orderId: String) : AppRoute
     data class CustomerOrderTracking(val orderId: String) : AppRoute
     data class CustomerPaymentSelection(val orderId: String) : AppRoute
@@ -58,15 +58,24 @@ sealed interface AppRoute {
     data object OwnerQrisSettings : AppRoute
     data object OwnerProducts : AppRoute
     data object OwnerProductCreate : AppRoute
-    data class OwnerProductEdit(val productId: String) : AppRoute
+    data class OwnerProductEdit(
+        val productId: String,
+        val name: String,
+        val price: String,
+        val description: String?,
+        val isAvailable: Boolean
+    ) : AppRoute
     data object OwnerProfile : AppRoute
 
     // Courier routes
     data object CourierHome : AppRoute
-    data class CourierOrderList(val status: String? = null) : AppRoute
-    data class CourierOrderDetail(val orderId: String) : AppRoute
-    data class CourierDeliveryActive(val orderId: String) : AppRoute
-    data class CourierCashConfirmation(val orderId: String) : AppRoute
+    data object CourierAssignmentList : AppRoute
+    data class CourierDeliveryDetail(val assignmentId: String) : AppRoute
+    data class CourierCustomerLocation(val assignmentId: String) : AppRoute
+    data class CourierCashConfirmation(val assignmentId: String) : AppRoute
+
+    /** Tracking posisi kurir untuk satu assignment. */
+    data class CourierTracking(val assignmentId: String) : AppRoute
     data object CourierProfile : AppRoute
 
     // Shared routes
@@ -77,8 +86,19 @@ sealed interface AppRoute {
 
 object RoutePaths {
     const val ARG_ORDER_ID = "orderId"
+
+    /**
+     * Id assignment kurir, bukan id order.
+     *
+     * Endpoint kurir di `backend/routes/api.php` bekerja pada
+     * `courier_assignments`, jadi seluruh rute yang bisa menjalankan aksi
+     * pengantaran harus membawa nilai ini. Memakai `ARG_ORDER_ID` di sini akan
+     * membuat backend membalas `404` karena id order bukan id assignment.
+     */
+    const val ARG_ASSIGNMENT_ID = "assignmentId"
     const val ARG_PRODUCT_ID = "productId"
     const val ARG_STATUS = "status"
+    const val ARG_FILTER = "filter"
     const val ARG_URL = "url"
     const val ARG_TITLE = "title"
 
@@ -104,30 +124,72 @@ object RoutePaths {
     const val CUSTOMER_CART = "customer_cart"
     const val CUSTOMER_CHECKOUT = "customer_checkout"
     const val CUSTOMER_ORDER_SUMMARY = "customer_order_summary"
-    const val CUSTOMER_ORDER_LIST = "customer_orders"
+    const val CUSTOMER_ORDER_LIST = "customer_orders?filter={filter}"
     const val CUSTOMER_ORDER_DETAIL = "customer_orders/{orderId}"
     const val CUSTOMER_ORDER_TRACKING = "customer_orders/{orderId}/tracking"
-const val CUSTOMER_PAYMENT_SELECTION = "customer_orders/{orderId}/payment"
-const val CUSTOMER_QRIS_PAYMENT = "customer_orders/{orderId}/payment/qris"
-const val CUSTOMER_CASH_PAYMENT = "customer_orders/{orderId}/payment/cash"
+    const val CUSTOMER_PAYMENT_SELECTION = "customer_orders/{orderId}/payment"
+    const val CUSTOMER_QRIS_PAYMENT = "customer_orders/{orderId}/payment/qris"
+    const val CUSTOMER_CASH_PAYMENT = "customer_orders/{orderId}/payment/cash"
     const val CUSTOMER_PROFILE = "customer_profile"
     const val CUSTOMER_EDIT_PROFILE = "customer_profile/edit"
 
+    const val CUSTOMER_GRAPH = "customer_graph"
+    
     const val OWNER_HOME = "owner_home"
+    const val OWNER_FINANCE = "owner_finance"
+    const val DIRECT_ORDER = "direct_order/{role}"
+    const val COURIER_DIRECT_ORDER = "courier_direct_order/{role}"
+    const val ARG_DIRECT_ORDER_ROLE = "role"
     const val OWNER_ORDER_LIST = "owner_orders?status={status}"
     const val OWNER_ORDER_DETAIL = "owner_orders/{orderId}"
+
+    /**
+     * Antrean verifikasi QRIS tanpa order id.
+     *
+     * Terpisah dari [OWNER_QRIS_VERIFICATION] yang membawa `orderId`, karena
+     * `GET /owner/payments/pending` mengembalikan seluruh antrean sedangkan
+     * `GET /owner/orders/{order}/payment/proof` bekerja pada satu order. Satu
+     * route untuk dua bentuk berbeda akan memaksa layar menebak mana yang
+     * dimaksud.
+     */
+    const val OWNER_QRIS_QUEUE = "owner/qris_verification"
+    const val COURIER_QRIS_QUEUE = "courier/qris_verification"
     const val OWNER_QRIS_VERIFICATION = "owner_orders/{orderId}/qris_verification"
     const val OWNER_QRIS_SETTINGS = "owner/qris_settings"
     const val OWNER_PRODUCTS = "owner/products"
     const val OWNER_PRODUCT_CREATE = "owner/products/create"
-    const val OWNER_PRODUCT_EDIT = "owner/products/{productId}/edit"
+    const val OWNER_PRODUCT_EDIT =
+        "owner/products/{productId}/edit?productName={productName}&productPrice={productPrice}&productDescription={productDescription}&productIsAvailable={productIsAvailable}"
     const val OWNER_PROFILE = "owner_profile"
 
+    /**
+     * Rute kurir memakai id assignment, bukan id order.
+     *
+     * Nama path di sini memakai assignment, bukan order, karena backend tidak
+     * punya endpoint `courier/orders` untuk dibaca. Rute lama yang berbasis
+     * orderId dihapus supaya tidak ada rute yang
+     * mengandaikan endpoint yang tidak ada.
+     *
+     * Id assignment diteruskan apa adanya, sama seperti `ARG_ORDER_ID` pada
+     * Customer dan Owner. Nilainya adalah angka dari `courier_assignments.id`,
+     * jadi tidak mengandung karakter yang perlu di-encode, dan membiarkannya
+     * apa adanya membuat path yang dibangun bisa diperiksa pada test JVM tanpa
+     * `android.net.Uri`.
+     */
     const val COURIER_HOME = "courier_home"
-    const val COURIER_ORDER_LIST = "courier_orders?status={status}"
-    const val COURIER_ORDER_DETAIL = "courier_orders/{orderId}"
-    const val COURIER_DELIVERY_ACTIVE = "courier_orders/{orderId}/delivery"
-    const val COURIER_CASH_CONFIRMATION = "courier_orders/{orderId}/cash_confirmation"
+    const val COURIER_ASSIGNMENT_LIST = "courier_assignments"
+    const val COURIER_DELIVERY_DETAIL = "courier_assignments/{assignmentId}/delivery"
+    const val COURIER_CUSTOMER_LOCATION = "courier_assignments/{assignmentId}/location"
+    const val COURIER_CASH_CONFIRMATION = "courier_assignments/{assignmentId}/cash_confirmation"
+
+    /**
+     * Tracking posisi kurir untuk satu assignment.
+     *
+     * Rute ini memakai [ARG_ASSIGNMENT_ID], bukan [ARG_ORDER_ID], karena
+     * endpoint yang dipakai adalah `POST courier/assignments/{assignment}/location`
+     * yang dijaga middleware `ensure-role:COURIER`.
+     */
+    const val COURIER_TRACKING = "courier_assignments/{assignmentId}/tracking"
     const val COURIER_PROFILE = "courier_profile"
 
     const val WEBVIEW = "webview?url={url}&title={title}"
@@ -158,15 +220,19 @@ fun AppRoute.toRouteString(): String = when (this) {
     AppRoute.CustomerCart -> RoutePaths.CUSTOMER_CART
     AppRoute.CustomerCheckout -> RoutePaths.CUSTOMER_CHECKOUT
     AppRoute.CustomerOrderSummary -> RoutePaths.CUSTOMER_ORDER_SUMMARY
-    AppRoute.CustomerOrderList -> RoutePaths.CUSTOMER_ORDER_LIST
+    is AppRoute.CustomerOrderList -> if (filter.isNullOrBlank()) {
+        RoutePaths.CUSTOMER_ORDER_LIST.substringBefore('?')
+    } else {
+        RoutePaths.CUSTOMER_ORDER_LIST.replace("{${RoutePaths.ARG_FILTER}}", Uri.encode(filter))
+    }
     is AppRoute.CustomerOrderDetail ->
         RoutePaths.CUSTOMER_ORDER_DETAIL.replace("{${RoutePaths.ARG_ORDER_ID}}", orderId)
     is AppRoute.CustomerOrderTracking ->
         RoutePaths.CUSTOMER_ORDER_TRACKING.replace("{${RoutePaths.ARG_ORDER_ID}}", orderId)
     is AppRoute.CustomerPaymentSelection ->
         RoutePaths.CUSTOMER_PAYMENT_SELECTION.replace("{${RoutePaths.ARG_ORDER_ID}}", orderId)
-is AppRoute.CustomerQrisPayment ->
-    RoutePaths.CUSTOMER_QRIS_PAYMENT.replace("{${RoutePaths.ARG_ORDER_ID}}", orderId)
+    is AppRoute.CustomerQrisPayment ->
+        RoutePaths.CUSTOMER_QRIS_PAYMENT.replace("{${RoutePaths.ARG_ORDER_ID}}", orderId)
     is AppRoute.CustomerCashPayment ->
     RoutePaths.CUSTOMER_CASH_PAYMENT.replace("{${RoutePaths.ARG_ORDER_ID}}", orderId)
     AppRoute.CustomerProfile -> RoutePaths.CUSTOMER_PROFILE
@@ -185,20 +251,33 @@ is AppRoute.CustomerQrisPayment ->
     AppRoute.OwnerProducts -> RoutePaths.OWNER_PRODUCTS
     AppRoute.OwnerProductCreate -> RoutePaths.OWNER_PRODUCT_CREATE
     is AppRoute.OwnerProductEdit ->
-        RoutePaths.OWNER_PRODUCT_EDIT.replace("{${RoutePaths.ARG_PRODUCT_ID}}", productId)
+        RoutePaths.OWNER_PRODUCT_EDIT
+            .replace("{${RoutePaths.ARG_PRODUCT_ID}}", Uri.encode(productId))
+            .replace("{${RoutePaths.ARG_PRODUCT_NAME}}", Uri.encode(name))
+            .replace("{${RoutePaths.ARG_PRODUCT_PRICE}}", Uri.encode(price))
+            .replace(
+                "{${RoutePaths.ARG_PRODUCT_DESCRIPTION}}",
+                Uri.encode(description.orEmpty())
+            )
+            .replace(
+                "{${RoutePaths.ARG_PRODUCT_IS_AVAILABLE}}",
+                isAvailable.toString()
+            )
     AppRoute.OwnerProfile -> RoutePaths.OWNER_PROFILE
     AppRoute.CourierHome -> RoutePaths.COURIER_HOME
-    is AppRoute.CourierOrderList -> if (status.isNullOrBlank()) {
-        RoutePaths.COURIER_ORDER_LIST.substringBefore('?')
-    } else {
-        RoutePaths.COURIER_ORDER_LIST.replace("{${RoutePaths.ARG_STATUS}}", Uri.encode(status))
-    }
-    is AppRoute.CourierOrderDetail ->
-        RoutePaths.COURIER_ORDER_DETAIL.replace("{${RoutePaths.ARG_ORDER_ID}}", orderId)
-    is AppRoute.CourierDeliveryActive ->
-        RoutePaths.COURIER_DELIVERY_ACTIVE.replace("{${RoutePaths.ARG_ORDER_ID}}", orderId)
+    AppRoute.CourierAssignmentList -> RoutePaths.COURIER_ASSIGNMENT_LIST
+    is AppRoute.CourierDeliveryDetail ->
+        RoutePaths.COURIER_DELIVERY_DETAIL
+            .replace("{${RoutePaths.ARG_ASSIGNMENT_ID}}", assignmentId)
+    is AppRoute.CourierCustomerLocation ->
+        RoutePaths.COURIER_CUSTOMER_LOCATION
+            .replace("{${RoutePaths.ARG_ASSIGNMENT_ID}}", assignmentId)
     is AppRoute.CourierCashConfirmation ->
-        RoutePaths.COURIER_CASH_CONFIRMATION.replace("{${RoutePaths.ARG_ORDER_ID}}", orderId)
+        RoutePaths.COURIER_CASH_CONFIRMATION
+            .replace("{${RoutePaths.ARG_ASSIGNMENT_ID}}", assignmentId)
+    is AppRoute.CourierTracking ->
+        RoutePaths.COURIER_TRACKING
+            .replace("{${RoutePaths.ARG_ASSIGNMENT_ID}}", assignmentId)
     AppRoute.CourierProfile -> RoutePaths.COURIER_PROFILE
     is AppRoute.WebView -> RoutePaths.WEBVIEW
         .replace("{${RoutePaths.ARG_URL}}", Uri.encode(url))

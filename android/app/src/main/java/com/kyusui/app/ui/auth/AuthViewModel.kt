@@ -2,12 +2,15 @@ package com.kyusui.app.ui.auth
 
 import com.kyusui.app.core.Result
 import com.kyusui.app.core.ValidationException
+import com.kyusui.app.core.isValidEmail
 import com.kyusui.app.domain.model.AuthSession
 import com.kyusui.app.domain.model.User
 import com.kyusui.app.domain.model.UserRole
 import com.kyusui.app.domain.repository.AuthRepository
 import com.kyusui.app.domain.repository.LoginRequest
 import com.kyusui.app.domain.repository.RegisterRequest
+import com.kyusui.app.ui.courier.tracking.CourierLocationSharing
+import com.kyusui.app.ui.courier.tracking.TrackingStopReason
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -61,7 +64,8 @@ enum class AuthEntryPoint {
 
 @HiltViewModel
 class AuthViewModel @Inject constructor(
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val sharing: CourierLocationSharing
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<AuthUiState>(AuthUiState.RestoringSession)
@@ -85,10 +89,12 @@ class AuthViewModel @Inject constructor(
         }
     }
 
-    fun login(login: String, password: String) {
-        if (login.isBlank() || password.isBlank()) {
+    fun login(email: String, password: String) {
+        val localErrors = validateLogin(email, password)
+        if (localErrors.isNotEmpty()) {
             _uiState.value = AuthUiState.Unauthenticated(
-                errorMessage = "Nomor telepon dan kata sandi wajib diisi."
+                errorMessage = VALIDATION_MESSAGE,
+                fieldErrors = localErrors
             )
             return
         }
@@ -97,7 +103,7 @@ class AuthViewModel @Inject constructor(
         viewModelScope.launch {
             when (
                 val result = authRepository.login(
-                    LoginRequest(login = login.trim(), password = password)
+                    LoginRequest(email = email.trim(), password = password)
                 )
             ) {
                 is Result.Success -> onAuthenticated(result.data.user)
@@ -113,7 +119,7 @@ class AuthViewModel @Inject constructor(
         val localErrors = validateRegister(request)
         if (localErrors.isNotEmpty()) {
             _uiState.value = AuthUiState.Unauthenticated(
-                errorMessage = "Periksa kembali data yang Anda isi.",
+                errorMessage = VALIDATION_MESSAGE,
                 fieldErrors = localErrors
             )
             return
@@ -131,11 +137,31 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Keloguan dari semua peran menghentikan pengiriman posisi kurir.
+     *
+     * Service latar belakang tidak boleh hidup setelah sesi berakhir: token
+     * sudah tidak valid, jadi pengiriman berikutnya (dan satu-satunya jalan
+     * keluar lain, 401 dari endpoint lokasi) pasti ditolak. Mematikan di sini
+     * menjamin tidak ada loop yang menyala tanpa session.
+     */
     fun logout() {
+        sharing.stop(TrackingStopReason.SESSION_EXPIRED)
         viewModelScope.launch {
             authRepository.logout()
             _entryPoint.value = AuthEntryPoint.LOGIN
             _uiState.value = AuthUiState.Unauthenticated()
+        }
+    }
+
+    /** Clear only the field being edited; keep unrelated validation feedback visible. */
+    fun clearFieldError(field: String) {
+        _uiState.update { state ->
+            if (state is AuthUiState.Unauthenticated) {
+                state.copy(errorMessage = null, fieldErrors = state.fieldErrors - field)
+            } else {
+                state
+            }
         }
     }
 
@@ -163,12 +189,38 @@ class AuthViewModel @Inject constructor(
         _uiState.value = AuthUiState.Authenticated(user)
     }
 
+    /**
+     * Backend login memakai `required|email|max:255`, jadi email kosong maupun
+ * bentuk yang salah ditolak di sini sebelum request dikirim. Password hanya
+ * diperiksa kosong; aturan panjang minimal milik backend, jadi tidak
+ * ditirukan dua kali dengan nilai yang bisa berbeda.
+ */
+private fun validateLogin(email: String, password: String): Map<String, String> = buildMap {
+        if (email.isBlank()) {
+            put(FIELD_EMAIL, EMAIL_REQUIRED_MESSAGE)
+        } else if (!isValidEmail(email)) {
+            put(FIELD_EMAIL, EMAIL_FORMAT_MESSAGE)
+        }
+        if (password.isBlank()) {
+            put(FIELD_PASSWORD, PASSWORD_REQUIRED_MESSAGE)
+        }
+    }
+
+    /**
+     * Backend register mewajibkan `email`, jadi email kosong adalah kesalahan
+     * lokal, bukan sesuatu yang diteruskan ke server untuk ditolak dengan 422.
+     */
     private fun validateRegister(request: RegisterRequest): Map<String, String> = buildMap {
         if (request.name.trim().length < MIN_NAME_LENGTH) {
             put(FIELD_NAME, "Nama minimal $MIN_NAME_LENGTH karakter.")
         }
         if (request.phone.trim().length < MIN_PHONE_LENGTH) {
             put(FIELD_PHONE, "Nomor telepon minimal $MIN_PHONE_LENGTH karakter.")
+        }
+        if (request.email.isBlank()) {
+            put(FIELD_EMAIL, EMAIL_REQUIRED_MESSAGE)
+        } else if (!isValidEmail(request.email)) {
+            put(FIELD_EMAIL, EMAIL_FORMAT_MESSAGE)
         }
         if (request.password.length < MIN_PASSWORD_LENGTH) {
             put(FIELD_PASSWORD, "Kata sandi minimal $MIN_PASSWORD_LENGTH karakter.")
@@ -188,7 +240,6 @@ class AuthViewModel @Inject constructor(
     private fun normalizeField(field: String): String = when (field.substringAfterLast('.')) {
         FIELD_NAME -> FIELD_NAME
         FIELD_PHONE -> FIELD_PHONE
-        FIELD_LOGIN -> FIELD_LOGIN
         FIELD_PASSWORD -> FIELD_PASSWORD
         FIELD_PASSWORD_CONFIRMATION -> FIELD_PASSWORD_CONFIRMATION
         FIELD_EMAIL -> FIELD_EMAIL
@@ -201,7 +252,6 @@ class AuthViewModel @Inject constructor(
     companion object {
         const val FIELD_NAME = "name"
         const val FIELD_PHONE = "phone"
-        const val FIELD_LOGIN = "login"
         const val FIELD_EMAIL = "email"
         const val FIELD_PASSWORD = "password"
         const val FIELD_PASSWORD_CONFIRMATION = "password_confirmation"
@@ -210,6 +260,15 @@ class AuthViewModel @Inject constructor(
         const val MIN_PHONE_LENGTH = 8
         const val MIN_PASSWORD_LENGTH = 8
 
+        /**
+         * Pesan lokal sengaja memakai teks yang sama dengan terjemahan di
+         * [com.kyusui.app.core.ApiErrorParser], sehingga pesan yang tampil tidak
+         * berubah hanya karena kesalahan ditemukan di sisi Android atau backend.
+         */
+        const val EMAIL_REQUIRED_MESSAGE = "Email wajib diisi."
+        const val EMAIL_FORMAT_MESSAGE = "Format email tidak valid."
+        const val PASSWORD_REQUIRED_MESSAGE = "Kata sandi wajib diisi."
+        const val VALIDATION_MESSAGE = "Periksa kembali data yang Anda isi."
         const val GENERIC_ERROR_MESSAGE = "Terjadi kesalahan. Silakan coba lagi."
     }
 }

@@ -6,6 +6,7 @@ use App\Enums\AssignmentStatus;
 use App\Enums\OrderStatus;
 use App\Models\Courier;
 use App\Models\CourierAssignment;
+use App\Models\FinancialTransaction;
 use App\Models\Customer;
 use App\Models\Order;
 use App\Models\Product;
@@ -44,6 +45,13 @@ class DashboardApiTest extends TestCase
             'assigned_at' => now(),
         ]);
         $pendingOrder = $this->order($customer, OrderStatus::MENUNGGU_PEMBAYARAN);
+        // Dashboard uang harus mengikuti buku kas, bukan menjumlahkan order selesai.
+        FinancialTransaction::create([
+            'type' => 'INCOME', 'category' => 'Penjualan', 'amount' => '12500.00',
+            'payment_method' => 'CASH', 'source' => 'MANUAL',
+            'recorded_by_user_id' => $ownerUser->id, 'description' => 'Pemasukan test',
+            'occurred_at' => now(),
+        ]);
         $pendingOrder->payment->update([
             'payment_method' => 'QRIS',
             'payment_status' => 'WAITING_VERIFICATION',
@@ -55,9 +63,13 @@ class DashboardApiTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('data.summary.total_orders', 2)
             ->assertJsonPath('data.summary.completed_orders', 1)
-            ->assertJsonPath('data.summary.today_revenue', 20000)
+            ->assertJsonPath('data.summary.today_revenue', 12500)
             ->assertJsonPath('data.summary.waiting_qris_verification', 1)
             ->assertJsonPath('data.summary.active_deliveries', 1)
+            ->assertJsonPath('data.summary.month_revenue', 12500)
+            ->assertJsonPath('data.summary.month_expense', 0)
+            ->assertJsonPath('data.summary.month_net', 12500)
+            ->assertJsonPath('data.revenue_chart.5.income', 12500)
             ->assertJsonPath('data.pending_qris_payments.0.id', $pendingOrder->payment->id)
             ->assertJsonPath('data.active_deliveries_list.0.id', $activeAssignment->id);
     }
@@ -75,7 +87,7 @@ class DashboardApiTest extends TestCase
 
         $this->actingAs($ownerUser)->getJson('/api/v1/dashboard/owner')
             ->assertOk()
-            ->assertJsonPath('data.pending_qris_payments.0.amount', '20000.00')
+            ->assertJsonPath('data.pending_qris_payments.0.amount', '15000.00')
             ->assertJsonPath('data.pending_qris_payments.0.payment_status', 'WAITING_VERIFICATION')
             ->assertJsonMissingPath('data.pending_qris_payments.0.total_amount');
     }
@@ -96,7 +108,7 @@ class DashboardApiTest extends TestCase
         $this->actingAs($customerUser)->getJson('/api/v1/dashboard/customer')
             ->assertOk()
             ->assertJsonPath('data.summary.total_completed_orders', 1)
-            ->assertJsonPath('data.summary.total_spent', 20000)
+            ->assertJsonPath('data.summary.total_spent', 15000)
             ->assertJsonPath('data.summary.favorite_product.name', 'Galon');
         $this->actingAs($courierUser)->getJson('/api/v1/dashboard/courier')
             ->assertOk()
@@ -130,8 +142,8 @@ class DashboardApiTest extends TestCase
         $order = $customer->orders()->create([
             'order_status' => $status->value,
             'subtotal_amount' => 15000,
-            'delivery_fee' => 5000,
-            'total_amount' => 20000,
+            'delivery_fee' => 0,
+            'total_amount' => 15000,
             'delivery_address' => 'Jl. Depot',
             'placed_at' => now(),
             'completed_at' => $status === OrderStatus::SELESAI ? now() : null,
@@ -146,7 +158,7 @@ class DashboardApiTest extends TestCase
         $order->payment()->create([
             'payment_method' => 'CASH',
             'payment_status' => 'PENDING',
-            'amount' => 20000,
+            'amount' => 15000,
         ]);
 
         return $order->fresh(['payment', 'assignments']);

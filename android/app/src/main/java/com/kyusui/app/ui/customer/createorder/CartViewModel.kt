@@ -1,6 +1,8 @@
 package com.kyusui.app.ui.customer.createorder
 
 import androidx.lifecycle.ViewModel
+import com.kyusui.app.core.DeliveryLocationValidation
+import com.kyusui.app.core.DeliveryLocationValidator
 import com.kyusui.app.core.PreviewLine
 import com.kyusui.app.core.Money
 import com.kyusui.app.domain.model.CartLine
@@ -19,7 +21,7 @@ import javax.inject.Inject
  *
  * Keranjang hanya menyimpan `productId` dan `quantity`. Harga yang ditampilkan
  * adalah harga dari `GET /products`, dan subtotal di layar ini hanya estimasi
- * UX: backend menghitung ulang subtotal, delivery fee, dan total final saat
+ * UX: backend memvalidasi harga produk dan menghitung total final saat
  * `POST /customer/orders` diproses.
  */
 data class CartUiState(
@@ -35,9 +37,9 @@ data class CartUiState(
 
     val canSubmit: Boolean
         get() = lines.isNotEmpty() &&
-            address.isNotBlank() &&
-            location != null &&
-            locationStatus == LocationStatus.Ready
+            locationStatus == LocationStatus.Ready &&
+            DeliveryLocationValidator.validate(address, location) is
+            DeliveryLocationValidation.Valid
 }
 
 enum class LocationStatus {
@@ -116,7 +118,8 @@ class CartViewModel @Inject constructor() : ViewModel() {
     fun deliveryLocation(): DeliveryLocation? {
         val state = _uiState.value
         val point = state.location ?: return null
-        if (state.address.isBlank()) return null
+        val validation = DeliveryLocationValidator.validate(state.address, point)
+        if (validation is DeliveryLocationValidation.Invalid) return null
         return DeliveryLocation(address = state.address.trim(), point = point)
     }
 

@@ -45,6 +45,7 @@ fun OrderSummaryScreen(
 ) {
     Scaffold(
         modifier = modifier,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text(text = "Ringkasan Pesanan") },
@@ -75,7 +76,7 @@ fun OrderSummaryScreen(
             cartState.lines.forEach { line ->
                 SummaryRow(
                     label = "${line.product.name} x${line.quantity}",
-                    value = Money.format(line.product.price)
+                    value = Money.format(Money.lineTotal(line.product.price, line.quantity))
                 )
             }
 
@@ -117,7 +118,7 @@ fun OrderSummaryScreen(
                 )
             ) {
                 Text(
-                    text = "Delivery fee dan total akhir dihitung oleh server saat pesanan diproses.",
+                    text = "Tidak ada biaya antar. Harga produk dan total pesanan divalidasi oleh server.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(12.dp)

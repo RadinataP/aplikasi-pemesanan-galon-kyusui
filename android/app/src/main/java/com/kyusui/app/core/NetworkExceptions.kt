@@ -16,6 +16,8 @@ class UnauthorizedException(message: String = "Unauthorized", cause: Throwable? 
 
 class ForbiddenException(message: String = "Forbidden", cause: Throwable? = null) : NetworkException(message, cause)
 
+class ConflictException(message: String = "Kondisi sudah berubah", cause: Throwable? = null) : NetworkException(message, cause)
+
 class NotFoundException(message: String = "Not found", cause: Throwable? = null) : NetworkException(message, cause)
 
 class ValidationException(

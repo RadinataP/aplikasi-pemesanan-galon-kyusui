@@ -120,6 +120,11 @@ class CustomerApiContractTest {
                 "delivery_fee": "0.00",
                 "total_amount": "16000.00",
                 "order_status": "MENUNGGU_DIPROSES",
+                "delivery_location": {
+                  "address": "Jl. Contoh No. 10",
+                  "latitude": -0.9471,
+                  "longitude": 100.4172
+                },
                 "payment": {
                   "id": 7001,
                   "payment_method": "CASH",
@@ -152,6 +157,10 @@ class CustomerApiContractTest {
         assertEquals("0.00", order.deliveryFee)
         assertEquals("16000.00", order.totalAmount)
         assertEquals(OrderStatus.MENUNGGU_DIPROSES, order.orderStatus)
+        // Koordinat tujuan harus terbaca dari field yang ditambahkan OrderResource.
+        assertEquals("Jl. Contoh No. 10", order.deliveryLocation?.address)
+        assertEquals(-0.9471, order.deliveryLocation?.point?.latitude ?: Double.NaN, 0.000001)
+        assertEquals(100.4172, order.deliveryLocation?.point?.longitude ?: Double.NaN, 0.000001)
 
         val payment = requireNotNull(order.payment)
         assertEquals("7001", payment.id)

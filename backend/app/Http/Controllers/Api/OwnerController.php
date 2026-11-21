@@ -18,6 +18,7 @@ use App\Models\Courier;
 use App\Models\CourierAssignment;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Models\PaymentProofHistory;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -263,7 +264,7 @@ class OwnerController extends Controller
      */
     public function pending(Request $request): JsonResponse
     {
-        $this->authorizeOwner($request);
+        $this->authorizeOperations($request);
 
         $validated = $request->validate([
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:50'],
@@ -288,6 +289,47 @@ class OwnerController extends Controller
     }
 
     /**
+     * Histori keputusan dan bukti QRIS. Hanya Owner/Courier terautentikasi.
+     */
+    public function proofHistory(Request $request, Order $order): JsonResponse
+    {
+        $this->authorizeOperations($request);
+        $rows = PaymentProofHistory::query()
+            ->with('actor:id,name')
+            ->whereHas('payment', fn ($q) => $q->where('order_id', $order->id))
+            ->latest('id')->get();
+
+        return response()->json([
+            'data' => $rows->map(fn (PaymentProofHistory $row) => [
+                'id' => $row->id,
+                'decision' => $row->decision,
+                'note' => $row->note,
+                'actor' => $row->actor?->name,
+                'decided_at' => $row->decided_at?->toISOString(),
+                'proof_available' => filled($row->proof_image) && Storage::disk('local')->exists($row->proof_image),
+            ]),
+            'message' => 'Histori verifikasi berhasil dimuat.',
+        ], 200);
+    }
+
+    /** Download a retained historical QRIS proof for the matching order. */
+    public function historicalProof(Request $request, Order $order, PaymentProofHistory $history): BinaryFileResponse|JsonResponse
+    {
+        $this->authorizeOperations($request);
+        abort_unless($history->payment()->where('order_id', $order->id)->exists(), 404, 'Histori bukti tidak ditemukan.');
+        abort_unless(filled($history->proof_image), 404, 'File bukti historis tidak tersedia.');
+        $disk = Storage::disk('local');
+        abort_unless($disk->exists($history->proof_image), 404, 'File bukti historis tidak ditemukan di server.');
+        $mime = in_array($history->proof_mime_type, ['image/jpeg', 'image/png'], true)
+            ? $history->proof_mime_type
+            : 'application/octet-stream';
+        $response = response()->file($disk->path($history->proof_image), ['Content-Type' => $mime]);
+        $response->setPrivate();
+        $response->setMaxAge(300);
+        return $response;
+    }
+
+    /**
      * `GET /owner/orders/{order}/payment/proof` — spec 06 section 12.2.
      *
      * Endpoint ini memakai order sebagai key resource, bukan payment id, dan
@@ -296,6 +338,7 @@ class OwnerController extends Controller
      */
     public function proof(Request $request, Order $order): BinaryFileResponse|JsonResponse|Response
     {
+        // Bukti pembayaran aktif hanya boleh diakses Owner, bukan Courier.
         $this->authorizeOwner($request);
 
         $payment = $order->payment;
@@ -399,11 +442,11 @@ class OwnerController extends Controller
      */
     public function verifyOrderPayment(Request $request, Order $order): JsonResponse
     {
-        $this->authorizeOwner($request);
+        $this->authorizeOperations($request);
 
         $validated = $request->validate([
             'action' => ['required', 'string', 'in:APPROVE,REJECT'],
-            'note' => ['sometimes', 'nullable', 'string', 'max:500'],
+            'note' => ['required_if:action,REJECT', 'nullable', 'string', 'min:5', 'max:500'],
         ]);
 
         $payment = $order->payment()->firstOrFail();
@@ -502,6 +545,17 @@ class OwnerController extends Controller
                 'File bukti pembayaran tidak ditemukan di server.',
             );
 
+            PaymentProofHistory::create([
+                'payment_id' => $lockedPayment->id,
+                'proof_image' => $lockedPayment->proof_image,
+                'proof_size' => $lockedPayment->proof_size,
+                'proof_mime_type' => $lockedPayment->proof_mime_type,
+                'proof_checksum' => $lockedPayment->proof_checksum,
+                'decision' => 'APPROVED',
+                'note' => null,
+                'actor_user_id' => $request->user()->id,
+                'decided_at' => now(),
+            ]);
             $lockedPayment->transitionTo(PaymentStatus::PAID, $request->user()->id);
             $order->update(['order_status' => OrderStatus::MENUNGGU_DIPROSES->value]);
             $order->statusHistories()->create([
@@ -527,9 +581,10 @@ class OwnerController extends Controller
             ));
         });
 
-        Log::info('Payment approved by owner', [
+        Log::info('Payment approved by operational staff', [
             'payment_id' => $payment->id,
-            'owner_id' => $request->user()->id,
+            'actor_user_id' => $request->user()->id,
+            'actor_role' => $request->user()->role?->name,
         ]);
 
         return response()->json([
@@ -546,8 +601,6 @@ class OwnerController extends Controller
      */
     private function reject(Request $request, Payment $payment): JsonResponse
     {
-        $proofPath = $payment->proof_image;
-
         DB::transaction(function () use ($payment, $request): void {
             $lockedPayment = Payment::query()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
             $lockedPayment->load('order.customer.user');
@@ -558,6 +611,17 @@ class OwnerController extends Controller
                 'Pembayaran tidak dapat ditolak pada status saat ini.',
             );
 
+            PaymentProofHistory::create([
+                'payment_id' => $lockedPayment->id,
+                'proof_image' => $lockedPayment->proof_image,
+                'proof_size' => $lockedPayment->proof_size,
+                'proof_mime_type' => $lockedPayment->proof_mime_type,
+                'proof_checksum' => $lockedPayment->proof_checksum,
+                'decision' => 'REJECTED',
+                'note' => trim((string) $request->input('note')),
+                'actor_user_id' => $request->user()->id,
+                'decided_at' => now(),
+            ]);
             $lockedPayment->update([
                 'proof_image' => null,
                 'verified_by' => null,
@@ -586,22 +650,10 @@ class OwnerController extends Controller
             ));
         });
 
-        if ($proofPath) {
-            try {
-                if (Storage::disk('local')->exists($proofPath)) {
-                    Storage::disk('local')->delete($proofPath);
-                }
-            } catch (\Exception $exception) {
-                Log::warning('Failed to delete rejected QRIS proof.', [
-                    'path' => $proofPath,
-                    'error' => $exception->getMessage(),
-                ]);
-            }
-        }
-
-        Log::info('Payment rejected by owner', [
+        Log::info('Payment rejected by operational staff', [
             'payment_id' => $payment->id,
-            'owner_id' => $request->user()->id,
+            'actor_user_id' => $request->user()->id,
+            'actor_role' => $request->user()->role?->name,
         ]);
 
         return response()->json([
@@ -619,6 +671,15 @@ class OwnerController extends Controller
             'statusHistories',
             'assignments.courier.user:id,name',
         ]);
+    }
+
+    private function authorizeOperations(Request $request): void
+    {
+        abort_unless(
+            in_array($request->user()?->role?->name, ['OWNER', 'COURIER'], true),
+            403,
+            'Akses hanya untuk Owner dan Courier.',
+        );
     }
 
     private function authorizeOwner(Request $request): void

@@ -13,8 +13,8 @@ import com.kyusui.app.domain.model.PaymentMethod
 import com.kyusui.app.domain.model.PaymentStatus
 import com.kyusui.app.domain.model.ProofImageSelection
 import com.kyusui.app.domain.repository.CustomerRepository
-import com.kyusui.app.ui.customer.toLoadError
-import com.kyusui.app.ui.customer.toSubmitError
+import com.kyusui.app.ui.state.toLoadError
+import com.kyusui.app.ui.state.toSubmitError
 import com.kyusui.app.ui.state.LoadState
 import com.kyusui.app.ui.state.SubmitState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -241,7 +241,7 @@ class PaymentViewModel @Inject constructor(
                     selectState = SubmitState.Error(
                         message = when (method) {
                             PaymentMethod.QRIS -> QRIS_NOT_CONFIGURED_MESSAGE
-                            PaymentMethod.CASH -> MISSING_ORDER_ID_MESSAGE
+                            PaymentMethod.CASH -> METHOD_NOT_SELECTABLE_MESSAGE
                         },
                         isRetryable = method == PaymentMethod.QRIS
                     )
@@ -381,6 +381,8 @@ class PaymentViewModel @Inject constructor(
 
         const val QRIS_NOT_CONFIGURED_MESSAGE =
             "QRIS belum dikonfigurasi. Silakan hubungi pemilik toko."
+        const val METHOD_NOT_SELECTABLE_MESSAGE =
+            "Metode pembayaran belum dapat dipilih saat ini."
         const val UNREADABLE_PROOF_MESSAGE =
             "File tidak dapat dibaca. Pilih file gambar JPG atau PNG."
         const val UPLOAD_NOT_ALLOWED_MESSAGE =

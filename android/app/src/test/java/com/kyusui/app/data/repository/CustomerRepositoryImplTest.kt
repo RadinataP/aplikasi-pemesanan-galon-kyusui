@@ -14,6 +14,7 @@ import com.kyusui.app.data.api.PageMetaDto
 import com.kyusui.app.data.upload.ProofFileSource
 import com.kyusui.app.domain.model.DeliveryLocation
 import com.kyusui.app.domain.model.GeoPoint
+import com.kyusui.app.domain.model.OrderStatus
 import com.kyusui.app.domain.repository.OrderItemRequest
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -141,13 +142,30 @@ class CustomerRepositoryImplTest {
     }
 
     @Test
-    fun `order history is requested with pagination`() = runTest {
-        coEvery { api.orders(any(), any()) } returns orderPage(listOf(orderDto()))
+    fun `order history is requested with pagination and no status filter by default`() = runTest {
+        coEvery { api.orders(any(), any(), any()) } returns orderPage(listOf(orderDto()))
 
         val result = repository.getOrders(page = 1, perPage = 50)
 
         assertTrue(result is Result.Success)
-        coVerify(exactly = 1) { api.orders(page = 1, perPage = 50) }
+        coVerify(exactly = 1) { api.orders(page = 1, perPage = 50, orderStatus = null) }
+    }
+
+    @Test
+    fun `order history sends the selected statuses as a comma separated filter`() = runTest {
+        coEvery { api.orders(any(), any(), any()) } returns orderPage(listOf(orderDto()))
+
+        repository.getOrders(
+            page = 1,
+            perPage = 50,
+            statuses = listOf(OrderStatus.DIPROSES, OrderStatus.DALAM_PENGANTARAN)
+        )
+
+        // Bentuk inilah yang divalidasi backend; nilai tak dikenal akan ditolak
+        // 422, bukan diabaikan.
+        coVerify(exactly = 1) {
+            api.orders(page = 1, perPage = 50, orderStatus = "DIPROSES,DALAM_PENGANTARAN")
+        }
     }
 
     @Test

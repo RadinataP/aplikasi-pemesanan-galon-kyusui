@@ -4,13 +4,13 @@ package com.kyusui.app.core
  * Validasi sisi klien untuk file bukti pembayaran QRIS.
  *
  * Pre-check ini murni untuk umpan masalah lebih awal sebelum jaringan dipakai.
- * Backend tetap validator final: `06_KYUSUI_API_SPECIFICATION_REBUILT.md`
+ * Backend tetap validator final: `06_Berkah Water_API_SPECIFICATION_REBUILT.md`
  * section 11.5 menyatakan ukuran maksimum dan daftar format harus berada di
  * konfigurasi backend, bukan konstanta Android.
  *
  * Karena itu Android tidak menetapkan aturan bisnis sendiri di sini. Nilai pada
  * [MAX_SIZE_BYTES] hanya pencerminan aturan yang sudah didokumentasikan pada
- * `08_KYUSUI_PAYMENT_SPECIFICATION_REBUILT.md` section 11.1, dipakai sebagai
+ * `08_Berkah Water_PAYMENT_SPECIFICATION_REBUILT.md` section 11.1, dipakai sebagai
  * pre-check UX agar customer mendapat umpan masalah sebelum jaringan dipakai.
  * Ia bukan sumber kebenaran: kalau konfigurasi backend lebih longgar, Android
  * tidak boleh mengubah hasil akhir, dan backend tetap menampilkan penolakan

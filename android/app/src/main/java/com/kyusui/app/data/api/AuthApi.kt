@@ -17,7 +17,7 @@ import retrofit2.http.GET
 import retrofit2.http.POST
 
 /**
- * Auth API sesuai `06_KYUSUI_API_SPECIFICATION_REBUILT.md` section 8.
+ * Auth API sesuai `06_Berkah Water_API_SPECIFICATION_REBUILT.md` section 8.
  *
  * Hanya empat endpoint yang dipakai:
  * - `POST /auth/register` (8.1)
@@ -48,23 +48,27 @@ interface AuthApi {
 /**
  * Section 8.1. Register adalah registrasi customer anonim, sehingga `role`
  * tidak pernah dikirim dari Android. Role ditetapkan backend.
+ *
+ * `email` wajib dan selalu dikirim. Backend memvalidasinya dengan `required`,
+ * jadi nullable di sini hanya akan menghasilkan 422 yang sudah bisa dihindari.
  */
 @Serializable
 data class AuthRegisterRequestDto(
     val name: String,
     val phone: String,
-    val email: String? = null,
+    val email: String,
     val password: String,
     @SerialName("password_confirmation") val passwordConfirmation: String
 )
 
 /**
- * Section 8.2. Backend menerima satu field `login`, yang pada specification
- * berisi nomor telepon. Field `email` tidak ada di contract login.
+ * Section 8.2. Backend mengidentifikasi pengguna lewat `email` dengan aturan
+ * `required|email|max:255`. Nama field di sini adalah nama field di backend;
+ * field `login` tidak pernah ada di contract login.
  */
 @Serializable
 data class AuthLoginRequestDto(
-    val login: String,
+    val email: String,
     val password: String
 )
 
@@ -87,6 +91,14 @@ data class AuthSessionDto(
  *
  * Specification tidak menyertakan `created_at` dan `updated_at` pada User
  * Resource, dan `role` berupa object `name` + `display_name`, bukan string.
+ *
+ * Ketidaksesuaian yang masih tersisa terhadap `UserResource` backend, dan disengaja
+ * dibiarkan nullable agar decoding tidak gagal total:
+ * - backend mengirim `role` hanya berisi `id` + `name`, jadi `display_name` null
+ *   dan `User.roleLabel()` memakai nama bawaan per role;
+ * - backend tidak mengirim `status`, jadi `User.isActive()` bernilai false;
+ * - nomor telepon ada di bawah `customer.phone` dan `courier.phone`, bukan di
+ *   tingkat atas, jadi `phone` null pada respons backend mana pun.
  */
 @Serializable
 data class AuthUserDto(
@@ -105,36 +117,30 @@ data class AuthRoleDto(
 )
 
 /**
- * `GET /auth/me` mengembalikan User Resource. Section 4.4 membungkus single
- * resource dalam `data`, jadi bentuk yang terutama dibaca adalah envelope. Bentuk
- * polos tanpa envelope juga diterima agar session restoration tidak gagal total
- * hanya karena perbedaan bentuk.
+ * Section 8.4. `GET /auth/me` membungkus User Resource satu level dalam di bawah
+ * `data`:
+ *
+ * ```json
+ * { "data": { "user": { "id": 1, "name": "Budi", ... } }, "message": "..." }
+ * ```
+ *
+ * Bentuk ini adalah satu-satunya yang pernah dikirim backend untuk endpoint ini,
+ * jadi tidak ada bentuk alternatif yang ditebak. Respons yang tidak memuat
+ * `data.user` menghasilkan `null` dari [resolveUser] dan ditangani pemanggilnya
+ * sebagai session tidak berlaku, bukan sebagai user dengan field kosong.
  */
 @Serializable
 data class AuthCurrentUserDto(
-    val data: AuthUserDto? = null,
-    val message: String? = null,
-    val id: Long? = null,
-    val name: String? = null,
-    val email: String? = null,
-    val phone: String? = null,
-    val role: AuthRoleDto? = null,
-    val status: String? = null
+    val data: AuthCurrentUserDataDto? = null,
+    val message: String? = null
 ) {
-    fun resolveUser(): AuthUserDto? {
-        data?.let { return it }
-        val fallbackId = id ?: return null
-        val fallbackRole = role ?: return null
-        return AuthUserDto(
-            id = fallbackId,
-            name = name.orEmpty(),
-            email = email,
-            phone = phone,
-            role = fallbackRole,
-            status = status
-        )
-    }
+    fun resolveUser(): AuthUserDto? = data?.user
 }
+
+@Serializable
+data class AuthCurrentUserDataDto(
+    val user: AuthUserDto? = null
+)
 
 /**
  * Specification menulis `id` sebagai angka. Serializer ini menerima angka maupun

@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">KyūSUI</string>
+    <string name="app_name">Berkah Water</string>
     <string name="loading">Memuat...</string>
     <string name="error_generic">Terjadi kesalahan</string>
     <string name="error_network">Koneksi jaringan bermasalah</string>
@@ -13,4 +13,17 @@
     <string name="confirm">Konfirmasi</string>
     <string name="yes">Ya</string>
     <string name="no">Tidak</string>
+
+    <!-- Notification Channel (Phase 8 - FCM) -->
+    <string name="notification_channel_id">berkah_water_default</string>
+    <string name="notification_channel_name">Notifikasi Berkah Water</string>
+    <string name="notification_channel_description">Notifikasi pesanan, pembayaran, dan pengantaran</string>
+
+    <!-- Foreground service pengiriman posisi kurir -->
+    <string name="courier_location_channel_id">berkah_water_courier_location</string>
+    <string name="courier_location_channel_name">Lokasi kurir</string>
+    <string name="courier_location_channel_description">Tetap tampil selama posisi kurir sedang dikirim</string>
+    <string name="courier_location_notification_title">Pengiriman posisi aktif</string>
+    <string name="courier_location_notification_text">Posisi kurir tetap dikirim selama pengantaran berjalan.</string>
+    <string name="courier_location_notification_text_duty">Posisi kurir tetap dikirim selama kurir bertugas.</string>
 </resources>

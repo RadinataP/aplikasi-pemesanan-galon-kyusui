@@ -11,22 +11,28 @@ import kotlinx.coroutines.flow.Flow
  *
  * `role` tidak ada di sini. Registrasi adalah customer anonim dan role
  * ditetapkan backend, sehingga Android tidak pernah mengirimnya.
+ *
+ * `email` wajib diisi karena backend memvalidasinya dengan `required`. Menelepon
+ * dengan email kosong berarti mengirim 422 yang pasti ditolak, jadi Android
+ * gagal lebih dulu di [validateRegister] milik AuthViewModel.
  */
 data class RegisterRequest(
     val name: String,
     val phone: String,
+    val email: String,
     val password: String,
-    val passwordConfirmation: String,
-    val email: String? = null
+    val passwordConfirmation: String
 )
 
 /**
  * Login sesuai API specification section 8.2.
  *
- * Backend menerima satu field `login`, yang berisi nomor telepon.
+ * Backend mengidentifikasi pengguna lewat satu field `email` dengan aturan
+ * `required|email|max:255`. Nomor telepon bukan identitas login, jadi tidak ada
+ * field `login` maupun nomor telepon pada request ini.
  */
 data class LoginRequest(
-    val login: String,
+    val email: String,
     val password: String
 )
 
@@ -46,7 +52,10 @@ interface AuthRepository {
 
     /**
      * Session restoration. Memakai token tersimpan untuk memvalidasi ulang
-     * lewat `GET /auth/me`. Bila backend menjawab 401, session lokal dihapus.
+     * lewat `GET /auth/me`. Bila backend menjawab 401, atau menjawab tanpa
+     * `data.user`, session lokal dihapus karena token itu tidak dapat dipakai lagi.
+     * Gangguan jaringan diteruskan sebagai kegagalan supaya pengguna dapat
+     * mencoba ulang tanpa kehilangan session lokal.
      */
     suspend fun restoreSession(): Result<AuthSession?>
 

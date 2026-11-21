@@ -1,17 +1,22 @@
 package com.kyusui.app.data.mapper
 
 import com.kyusui.app.data.api.ActiveQrisDto
+import com.kyusui.app.data.api.CourierLocationDto
 import com.kyusui.app.data.api.CustomerOrderDto
 import com.kyusui.app.data.api.CustomerOrderItemDto
 import com.kyusui.app.data.api.CustomerOrderPaymentDto
 import com.kyusui.app.data.api.CustomerPaymentDto
 import com.kyusui.app.data.api.CustomerProductDto
 import com.kyusui.app.data.api.CustomerProfileDto
+import com.kyusui.app.data.api.CustomerTrackingDto
 import com.kyusui.app.data.api.PageDto
 import com.kyusui.app.data.api.PaymentEnvelopeDto
 import com.kyusui.app.data.api.PaymentProofDto
 import com.kyusui.app.domain.model.ActiveQris
+import com.kyusui.app.domain.model.AssignmentStatus
+import com.kyusui.app.domain.model.CourierLocationPoint
 import com.kyusui.app.domain.model.CustomerProfile
+import com.kyusui.app.domain.model.GeoPoint
 import com.kyusui.app.domain.model.Order
 import com.kyusui.app.domain.model.OrderItem
 import com.kyusui.app.domain.model.OrderPayment
@@ -22,6 +27,7 @@ import com.kyusui.app.domain.model.PaymentMethod
 import com.kyusui.app.domain.model.PaymentProof
 import com.kyusui.app.domain.model.PaymentStatus
 import com.kyusui.app.domain.model.Product
+import com.kyusui.app.domain.model.OrderTracking
 
 /**
  * Mapping DTO -> domain untuk Customer API.
@@ -72,7 +78,17 @@ fun CustomerOrderDto.toDomain(): Order = Order(
     deliveryFee = delivery_fee,
     totalAmount = total_amount,
     orderStatus = OrderStatus.fromApiValue(order_status),
-    payment = payment?.toDomain()
+    payment = payment?.toDomain(),
+    // Jangan membentuk GeoPoint bila salah satu koordinat tidak tersedia.
+    deliveryLocation = delivery_location?.let { location ->
+        // Lokasi tidak valid tidak dibuat sebagai titik (0,0) atau titik tebakan.
+        if (location.latitude != null && location.longitude != null) {
+            com.kyusui.app.domain.model.DeliveryLocation(
+                address = location.address.orEmpty(),
+                point = GeoPoint(location.latitude, location.longitude)
+            )
+        } else null
+    }
 )
 
 fun <D, M> PageDto<D>.toDomain(transform: (D) -> M): PaginatedResult<M> = PaginatedResult(
@@ -112,3 +128,44 @@ fun ActiveQrisDto.toDomain(): ActiveQris = ActiveQris(
 fun PaymentEnvelopeDto.requirePayment(): Payment =
     payment?.toDomain()
         ?: throw IllegalStateException("Respons backend tidak memuat payment.")
+/**
+ * Satu titik posisi dari tracking customer.
+ *
+ * Titik yang koordinatnya tidak lengkap dibuang, bukan diisi dengan nol.
+ * Mengganti koordinat yang hilang dengan `0.0` akan menandai titik di Gulf of
+ * Guinea sebagai posisi kurir di peta, jadi lebih benar baris tersebut tidak
+ * ditampilkan sama sekali. `mapNotNull` di pemanggilnya mempertahankan urutan
+ * dari backend, jadi titik terbaru tetap berada di indeks 0.
+ *
+ * Namanya sengaja tidak `toDomainOrNull` seperti padanannya di
+ * `CourierMappers`. Yang di sana menerima receiver nullable dan mengembalikan
+ * `CourierDeviceLocation`; versi ini menerima receiver non-null. Dua fungsi
+ * dengan nama sama akan membuat pemanggilan pada receiver non-null memilih
+ * versi ini dan mengembalikan tipe yang salah ke `CourierRepositoryImpl`.
+ */
+fun CourierLocationDto.toTrackingPointOrNull(): CourierLocationPoint? {
+    val latitude = latitude ?: return null
+    val longitude = longitude ?: return null
+    return CourierLocationPoint(
+        point = GeoPoint(latitude = latitude, longitude = longitude),
+        accuracyMeters = accuracy_meters,
+        recordedAt = recorded_at
+    )
+}
+
+/**
+ * `data` dari `GET orders/{order}/tracking` menjadi model tracking.
+ *
+ * `status` dibaca lewat `AssignmentStatus.fromApiValue(...)` supaya nilai yang
+ * tidak dikenal menjadi `null` dan UI bisa menampilkan "Status tidak
+ * diketahui", bukan menebak status bisnis. Urutan `locations` tidak diubah
+ * di sini; backend sudah mengurutkannya `latest('recorded_at')->limit(10)`.
+ */
+fun CustomerTrackingDto.toDomain(): OrderTracking = OrderTracking(
+    assignmentId = id.toString(),
+    orderId = order_id?.toString(),
+    assignmentStatus = AssignmentStatus.fromApiValue(status),
+    startedAt = started_at,
+    completedAt = completed_at,
+    locations = locations.mapNotNull { it.toTrackingPointOrNull() }
+)

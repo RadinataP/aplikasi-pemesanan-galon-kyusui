@@ -47,11 +47,11 @@ class KyusuiApiTest extends TestCase
         ]);
 
         $response->assertCreated()
-            ->assertJsonPath('data.total_amount', '32000.00')
+            ->assertJsonPath('data.total_amount', '30000.00')
             ->assertJsonPath('data.order_status', 'MENUNGGU_PEMBAYARAN')
             ->assertJsonPath('data.items.0.product_name', 'Galon');
         $this->assertDatabaseHas('payment_status_histories', ['to_status' => 'PENDING']);
-        $this->assertDatabaseHas('orders', ['order_status' => 'MENUNGGU_PEMBAYARAN', 'total_amount' => 32000]);
+        $this->assertDatabaseHas('orders', ['order_status' => 'MENUNGGU_PEMBAYARAN', 'total_amount' => 30000]);
     }
 
     public function test_cash_payment_selection_moves_order_to_processing_queue(): void

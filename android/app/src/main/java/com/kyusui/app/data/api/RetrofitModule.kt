@@ -54,16 +54,24 @@ object RetrofitModule {
     fun provideAuthInterceptor(authTokenStore: AuthTokenStore): AuthInterceptor =
         AuthInterceptor(authTokenStore)
 
+    /**
+     * Chain OkHttp **wajib** hanya berisi interceptor yang mengembalikan
+     * `Response` dan tidak pernah melempar.
+     *
+     * Response non-2xx sengaja diteruskan apa adanya ke Retrofit. Retrofit yang
+     * baru melempar [retrofit2.HttpException], dan
+     * `com.kyusui.app.core.safeApiCall` memetakannya ke exception domain di
+     * dalam coroutine.
+     *
+     * Jangan menambahkan interceptor yang melempar exception di sini: OkHttp
+     * menjalankan interceptor di thread Dispatcher, dan `RuntimeException`
+     * dari sana dilempar ulang oleh `AsyncCall.execute()` sampai uncaught handler
+     * sehingga proses mati (`FATAL EXCEPTION: OkHttp Dispatcher`). Error HTTP
+     * 422 pun ikut menjatuhkan aplikasi.
+     */
     @Provides
     @Singleton
-    fun provideApiErrorParser(json: Json): ApiErrorParser = ApiErrorParser(json)
-
-    @Provides
-    @Singleton
-    fun provideOkHttpClient(
-        authInterceptor: AuthInterceptor,
-        apiErrorParser: ApiErrorParser
-    ): OkHttpClient {
+    fun provideOkHttpClient(authInterceptor: AuthInterceptor): OkHttpClient {
         return OkHttpClient.Builder()
             .connectTimeout(Constants.DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .readTimeout(Constants.DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -71,14 +79,14 @@ object RetrofitModule {
             .retryOnConnectionFailure(true)
             .addInterceptor(authInterceptor)
             .addInterceptor(SafeLoggingInterceptor())
-            .addNetworkInterceptor(ResponseValidationInterceptor(apiErrorParser))
+            .addInterceptor(ApiFailureLogInterceptor())
             .build()
     }
 
     @Provides
     @Singleton
     fun provideRetrofit(okHttpClient: OkHttpClient, json: Json): Retrofit = Retrofit.Builder()
-        .baseUrl(Constants.BASE_URL_DEV)
+        .baseUrl(BuildConfig.API_BASE_URL)
         .client(okHttpClient)
         .addConverterFactory(json.asConverterFactory(jsonMediaType))
         .build()
@@ -90,6 +98,22 @@ object RetrofitModule {
     @Provides
     @Singleton
     fun provideCustomerApi(retrofit: Retrofit): CustomerApi = retrofit.create(CustomerApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideOwnerApi(retrofit: Retrofit): OwnerApi = retrofit.create(OwnerApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideProfileApi(retrofit: Retrofit): ProfileApi = retrofit.create(ProfileApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideCourierApi(retrofit: Retrofit): CourierApi = retrofit.create(CourierApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideNotificationApi(retrofit: Retrofit): NotificationApi = retrofit.create(NotificationApi::class.java)
 
     /**
      * Coil memakai OkHttpClient yang sama dengan Retrofit.
@@ -186,28 +210,4 @@ class SafeLoggingInterceptor : Interceptor {
     }
 
     override fun intercept(chain: Interceptor.Chain): Response = delegate.intercept(chain)
-}
-
-class ResponseValidationInterceptor(
-    private val errorParser: ApiErrorParser
-) : Interceptor {
-
-    override fun intercept(chain: Interceptor.Chain): Response {
-        val response = chain.proceed(chain.request())
-        val code = response.code
-
-        if (code in 200..299) return response
-
-        val errorBody = runCatching { response.peekBody(MAX_ERROR_BODY_BYTES).string() }.getOrNull()
-
-        throw errorParser.parse(
-            statusCode = code,
-            rawBody = errorBody,
-            httpMessage = response.message
-        )
-    }
-
-    private companion object {
-        const val MAX_ERROR_BODY_BYTES = 4L * 1024L
-    }
 }

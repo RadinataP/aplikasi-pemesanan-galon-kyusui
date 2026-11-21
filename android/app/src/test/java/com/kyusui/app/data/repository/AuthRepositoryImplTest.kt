@@ -1,10 +1,13 @@
 package com.kyusui.app.data.repository
 
+import com.kyusui.app.core.ApiErrorParser
 import com.kyusui.app.core.NoNetworkException
 import com.kyusui.app.core.Result
+import com.kyusui.app.core.ServerException
 import com.kyusui.app.core.UnauthorizedException
 import com.kyusui.app.core.ValidationException
 import com.kyusui.app.data.api.AuthApi
+import com.kyusui.app.data.api.AuthCurrentUserDataDto
 import com.kyusui.app.data.api.AuthCurrentUserDto
 import com.kyusui.app.data.api.AuthEnvelopeDto
 import com.kyusui.app.data.api.AuthLoginRequestDto
@@ -23,12 +26,14 @@ import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import retrofit2.HttpException
 import retrofit2.Response
 
 /**
@@ -60,7 +65,7 @@ class AuthRepositoryImplTest {
             roleName = "CUSTOMER"
         )
 
-        val result = repository.login(LoginRequest(login = "081234567890", password = "secret"))
+        val result = repository.login(LoginRequest(email = "budi@example.com", password = "secret"))
 
         assertTrue(result.isSuccess)
         val authResult = result.getOrThrow()
@@ -83,14 +88,18 @@ class AuthRepositoryImplTest {
         }
     }
 
+    /**
+     * `AuthController::login` mencari user dengan `where('email', ...)`, jadi
+     * nama field harus `email`. Mengirim `login` akan menghasilkan 422.
+     */
     @Test
-    fun `login sends the login field as required by the specification`() = runBlocking {
+    fun `login sends the trimmed email field required by the backend`() = runBlocking {
         val captured = slot<AuthLoginRequestDto>()
         coEvery { authApi.login(capture(captured)) } returns envelope()
 
-        repository.login(LoginRequest(login = "  081234567890  ", password = "secret"))
+        repository.login(LoginRequest(email = "  budi@example.com  ", password = "secret"))
 
-        assertEquals("081234567890", captured.captured.login)
+        assertEquals("budi@example.com", captured.captured.email)
         assertEquals("secret", captured.captured.password)
     }
 
@@ -102,7 +111,7 @@ class AuthRepositoryImplTest {
             "Sesi tidak valid atau telah berakhir. Silakan masuk kembali."
         )
 
-        val result = repository.login(LoginRequest(login = "081234567890", password = "salah"))
+        val result = repository.login(LoginRequest(email = "budi@example.com", password = "salah"))
 
         assertTrue(result.isFailure)
         assertTrue(result.exceptionOrNull is UnauthorizedException)
@@ -160,6 +169,30 @@ class AuthRepositoryImplTest {
         assertEquals("secret-password", captured.captured.passwordConfirmation)
     }
 
+    /**
+     * Backend memvalidasi `email` dengan `required`. Versi lama membuang email
+     * kosong sebelum request, yang membuat 422 menjadi tak terduga bagi pengguna.
+     * Repository kini meneruskan apa adanya; penolakan email kosong adalah
+     * pekerjaan validasi lokal di ViewModel.
+     */
+    @Test
+    fun `register forwards the email exactly as given instead of dropping it`() = runBlocking {
+        val captured = slot<AuthRegisterRequestDto>()
+        coEvery { authApi.register(capture(captured)) } returns envelope()
+
+        repository.register(
+            RegisterRequest(
+                name = "Budi",
+                phone = "081234567890",
+                email = "budi@example.com",
+                password = "secret-password",
+                passwordConfirmation = "secret-password"
+            )
+        )
+
+        assertEquals("budi@example.com", captured.captured.email)
+    }
+
     // --- 4. Session restoration ---
 
     @Test
@@ -172,8 +205,30 @@ class AuthRepositoryImplTest {
         assertTrue(result.isSuccess)
         val session = requireNotNull(result.getOrThrow())
         assertEquals("stored-token", session.token)
+        assertEquals("1", session.user.id)
+        assertEquals("Budi", session.user.name)
+        assertEquals("budi@example.com", session.user.email)
         assertEquals(UserRole.OWNER, session.user.role)
         coVerify(exactly = 1) { authApi.currentUser() }
+    }
+
+    @Test
+    fun `session restoration repersists the user resolved from the nested data user`() = runBlocking {
+        coEvery { preferencesRepository.storedSession } returns flowOf(storedSession())
+        coEvery { authApi.currentUser() } returns currentUser(roleName = "CUSTOMER")
+
+        repository.restoreSession()
+
+        coVerify(exactly = 1) {
+            preferencesRepository.saveAuthData(
+                accessToken = "stored-token",
+                userId = "1",
+                role = "CUSTOMER",
+                email = "budi@example.com",
+                name = "Budi",
+                status = "ACTIVE"
+            )
+        }
     }
 
     @Test
@@ -213,6 +268,41 @@ class AuthRepositoryImplTest {
         coVerify(exactly = 1) { preferencesRepository.clearAuthData() }
     }
 
+    @Test
+    fun `HTTP 401 on auth me clears the local session during restoration`() = runBlocking {
+        coEvery { preferencesRepository.storedSession } returns flowOf(storedSession())
+        coEvery { authApi.currentUser() } throws httpException(401, """{"message":"Unauthenticated."}""")
+
+        val result = repository.restoreSession()
+
+        assertTrue(result.isSuccess)
+        assertNull(result.getOrThrow())
+        coVerify(exactly = 1) { preferencesRepository.clearAuthData() }
+    }
+
+    @Test
+    fun `HTTP 401 on auth me is reported as unauthorized for current user`() = runBlocking {
+        coEvery { authApi.currentUser() } throws httpException(401, """{"message":"Unauthenticated."}""")
+
+        val result = repository.currentUser()
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull is UnauthorizedException)
+        coVerify(exactly = 0) { preferencesRepository.clearAuthData() }
+    }
+
+    @Test
+    fun `HTTP 500 on auth me propagates as a server failure so the user can retry`() = runBlocking {
+        coEvery { preferencesRepository.storedSession } returns flowOf(storedSession())
+        coEvery { authApi.currentUser() } throws httpException(500, """{"message":"Server error."}""")
+
+        val result = repository.restoreSession()
+
+        assertTrue(result.isFailure)
+        assertEquals(500, (result.exceptionOrNull as ServerException).statusCode)
+        coVerify(exactly = 0) { preferencesRepository.clearAuthData() }
+    }
+
     // --- 6. Logout ---
 
     @Test
@@ -228,7 +318,7 @@ class AuthRepositoryImplTest {
 
     @Test
     fun `logout clears local session even when the server rejects the request`() = runBlocking {
-        coEvery { authApi.logout() } returns Response.error(401, okhttp3.ResponseBody.create(null, ""))
+        coEvery { authApi.logout() } returns Response.error(401, "".toResponseBody(null))
 
         repository.logout()
 
@@ -257,7 +347,7 @@ class AuthRepositoryImplTest {
         expected.forEach { (roleName, expectedRole) ->
             coEvery { authApi.login(any()) } returns envelope(roleName = roleName)
 
-            val result = repository.login(LoginRequest(login = "0812", password = "secret"))
+            val result = repository.login(LoginRequest(email = "budi@example.com", password = "secret"))
 
             assertTrue(result.isSuccess)
             assertEquals(expectedRole, result.getOrThrow().user.role)
@@ -268,7 +358,7 @@ class AuthRepositoryImplTest {
     fun `unknown role is rejected instead of silently treated as customer`() = runBlocking {
         coEvery { authApi.login(any()) } returns envelope(roleName = "ADMIN")
 
-        val result = repository.login(LoginRequest(login = "0812", password = "secret"))
+        val result = repository.login(LoginRequest(email = "budi@example.com", password = "secret"))
 
         assertTrue(result.isFailure)
         coVerify(exactly = 0) {
@@ -288,29 +378,177 @@ class AuthRepositoryImplTest {
         assertEquals(UserRole.COURIER, user.role)
     }
 
+    /**
+     * `UserResource` backend tidak mengirim `display_name`, jadi label role
+     * memakai nama bawaan per role. `status` juga tidak dikirim, sehingga
+     * `isActive()` false; tidak ada consumer produksi yang bergantung pada ini.
+     */
     @Test
-    fun `current user also accepts an unwrapped user resource`() = runBlocking {
-        coEvery { authApi.currentUser() } returns AuthCurrentUserDto(
-            data = null,
-            message = null,
-            id = 7L,
-            name = "Andi",
-            email = "andi@example.com",
-            phone = "081200000000",
-            role = AuthRoleDto(name = "COURIER", display_name = "Kurir"),
-            status = "ACTIVE"
-        )
+    fun `current user from the real user resource maps to the domain model`() = runBlocking {
+        coEvery { authApi.currentUser() } returns backendUserResource(roleName = "CUSTOMER")
 
         val result = repository.currentUser()
 
         assertTrue(result.isSuccess)
-        val session = result.getOrThrow()
-        assertNotNull(session)
-        assertEquals("7", requireNotNull(session).id)
-        assertEquals(UserRole.COURIER, requireNotNull(session).role)
+        val user = result.getOrThrow()
+        assertEquals("5", user.id)
+        assertEquals("Andi", user.name)
+        assertEquals("andi@example.com", user.email)
+        assertEquals(UserRole.CUSTOMER, user.role)
+        assertEquals("Pelanggan", user.roleLabel())
+    }
+
+    /**
+     * Respons yang tidak memuat `data.user` harus ditangani sebagai session
+     * tidak berlaku, bukan lewat exception yang membuat layar restore gagal
+     * atau user dengan field kosong.
+     */
+    @Test
+    fun `current user without data user fails instead of returning an empty user`() = runBlocking {
+        coEvery { authApi.currentUser() } returns AuthCurrentUserDto(data = null, message = "Success.")
+
+        val result = repository.currentUser()
+
+        assertTrue(result.isFailure)
+    }
+
+    @Test
+    fun `session restoration clears the local session when the response has no user`() = runBlocking {
+        coEvery { preferencesRepository.storedSession } returns flowOf(storedSession())
+        coEvery { authApi.currentUser() } returns AuthCurrentUserDto(
+            data = AuthCurrentUserDataDto(user = null),
+            message = "Success."
+        )
+
+        val result = repository.restoreSession()
+
+        assertTrue(result.isSuccess)
+        assertNull(result.getOrThrow())
+        coVerify(exactly = 1) { preferencesRepository.clearAuthData() }
+    }
+
+    // --- 8. HTTP error responses coming from Retrofit ---
+
+    /**
+     * Registro regresi untuk crash `FATAL EXCEPTION: OkHttp Dispatcher`.
+     *
+     * Error HTTP sungguhan tidak pernah sampai sebagai [ValidationException]:
+     * Retrofit melempar [retrofit2.HttpException], dan `safeApiCall` yang
+     * memetakannya. Test ini memakai bentuk itu, bukan exception yang sudah
+     * dipetakan, supaya jalur produksi ikut ter-cover.
+     */
+    @Test
+    fun `HTTP 422 on login becomes a validation failure with field errors`() = runBlocking {
+        val body = """
+            {
+              "message": "The email field is required.",
+              "errors": {
+                "email": ["The email field is required."],
+                "password": ["The password field must be at least 8 characters."]
+              }
+            }
+        """.trimIndent()
+        coEvery { authApi.login(any()) } throws httpException(422, body)
+
+        val result = repository.login(LoginRequest(email = "budi@example.com", password = "salah"))
+
+        assertTrue(result.isFailure)
+        val validation = result.exceptionOrNull as ValidationException
+        assertEquals("Email wajib diisi.", validation.errors["email"]?.first())
+        assertEquals("Kata sandi minimal 8 karakter.", validation.errors["password"]?.first())
+        coVerify(exactly = 0) {
+            preferencesRepository.saveAuthData(any(), any(), any(), any(), any(), any())
+        }
+    }
+
+    @Test
+    fun `HTTP 422 on register becomes a validation failure with field errors`() = runBlocking {
+        val body = """
+            { "message": "The given data was invalid.",
+              "errors": { "email": ["The email has already been taken."] } }
+        """.trimIndent()
+        coEvery { authApi.register(any()) } throws httpException(422, body)
+
+        val result = repository.register(
+            RegisterRequest(
+                name = "Budi",
+                phone = "081234567890",
+                email = "budi@example.com",
+                password = "secret-password",
+                passwordConfirmation = "secret-password"
+            )
+        )
+
+        assertTrue(result.isFailure)
+        val validation = result.exceptionOrNull as ValidationException
+        assertEquals("Email sudah terdaftar.", validation.errors["email"]?.first())
+        coVerify(exactly = 0) {
+            preferencesRepository.saveAuthData(any(), any(), any(), any(), any(), any())
+        }
+    }
+
+    @Test
+    fun `HTTP 422 without field errors keeps the generic validation message`() = runBlocking {
+        coEvery { authApi.login(any()) } throws
+            httpException(422, """{"message":"The given data was invalid."}""")
+
+        val result = repository.login(LoginRequest(email = "budi@example.com", password = "salah-password"))
+
+        val validation = result.exceptionOrNull as ValidationException
+        assertTrue(validation.errors.isEmpty())
+        assertEquals(ApiErrorParser.VALIDATION_MESSAGE, validation.message)
+    }
+
+    @Test
+    fun `HTTP 401 on login becomes an unauthorized failure`() = runBlocking {
+        coEvery { authApi.login(any()) } throws
+            httpException(401, """{"message":"Email atau password salah."}""")
+
+        val result = repository.login(LoginRequest(email = "budi@example.com", password = "salah-password"))
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull is UnauthorizedException)
+    }
+
+    @Test
+    fun `HTTP 500 on register becomes a server failure`() = runBlocking {
+        coEvery { authApi.register(any()) } throws
+            httpException(500, """{"message":"Registrasi gagal. Silakan coba lagi."}""")
+
+        val result = repository.register(
+            RegisterRequest(
+                name = "Budi",
+                phone = "081234567890",
+                password = "secret-password",
+                passwordConfirmation = "secret-password",
+                email = "budi@example.com"
+            )
+        )
+
+        assertTrue(result.isFailure)
+        val server = result.exceptionOrNull as ServerException
+        assertEquals(500, server.statusCode)
+        assertEquals("Registrasi gagal. Silakan coba lagi.", server.message)
+    }
+
+    @Test
+    fun `HTTP 503 on login becomes a server failure and does not persist a session`() = runBlocking {
+        coEvery { authApi.login(any()) } throws httpException(503, "")
+
+        val result = repository.login(LoginRequest(email = "budi@example.com", password = "secret-password"))
+
+        assertTrue(result.isFailure)
+        assertEquals(503, (result.exceptionOrNull as ServerException).statusCode)
+        coVerify(exactly = 0) {
+            preferencesRepository.saveAuthData(any(), any(), any(), any(), any(), any())
+        }
     }
 
     // --- Helpers ---
+
+    private fun httpException(code: Int, body: String): HttpException = HttpException(
+        Response.error<Unit>(code, body.toResponseBody("application/json".toMediaType()))
+    )
 
     private fun envelope(
         token: String = "sanctum-token",
@@ -323,9 +561,31 @@ class AuthRepositoryImplTest {
         message = "Login successful."
     )
 
-    private fun currentUser(roleName: String) = AuthCurrentUserDto(
-        data = authUser(roleName = roleName),
-        message = "Success."
+    /**
+ * Bentuk literal `AuthController::me`: user berada satu level dalam di bawah
+ * `data`, bukan langsung di `data`.
+ */
+private fun currentUser(roleName: String) = AuthCurrentUserDto(
+        data = AuthCurrentUserDataDto(user = authUser(roleName = roleName)),
+        message = "Data pengguna berhasil dimuat."
+    )
+
+    /**
+     * Bentuk `UserResource` yang sebenarnya dari backend: `role` hanya berisi
+     * `id` + `name`, dan `status` tidak pernah dikirim.
+     */
+    private fun backendUserResource(roleName: String) = AuthCurrentUserDto(
+        data = AuthCurrentUserDataDto(
+            user = AuthUserDto(
+                id = 5L,
+                name = "Andi",
+                email = "andi@example.com",
+                phone = null,
+                role = AuthRoleDto(name = roleName, display_name = null),
+                status = null
+            )
+        ),
+        message = "Data pengguna berhasil dimuat."
     )
 
     private fun authUser(roleName: String) = AuthUserDto(

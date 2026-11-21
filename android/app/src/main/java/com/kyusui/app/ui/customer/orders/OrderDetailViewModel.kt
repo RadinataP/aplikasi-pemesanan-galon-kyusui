@@ -6,8 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.kyusui.app.core.Result
 import com.kyusui.app.domain.model.Order
 import com.kyusui.app.domain.repository.CustomerRepository
-import com.kyusui.app.ui.customer.toLoadError
+import com.kyusui.app.ui.state.toLoadError
 import com.kyusui.app.ui.state.LoadState
+import com.kyusui.app.ui.state.SubmitState
+import com.kyusui.app.ui.state.toSubmitError
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,6 +33,13 @@ class OrderDetailViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<LoadState<Order>>(LoadState.Loading)
     val uiState: StateFlow<LoadState<Order>> = _uiState.asStateFlow()
 
+    /**
+     * State aksi pembatalan. Dipisah dari [uiState] supaya kegagalan memuat
+     * detail order tidak tercampur dengan kegagalan aksi pembatalan.
+     */
+    private val _cancelState = MutableStateFlow<SubmitState>(SubmitState.Idle)
+    val cancelState: StateFlow<SubmitState> = _cancelState.asStateFlow()
+
     init {
         loadOrder()
     }
@@ -52,6 +61,39 @@ class OrderDetailViewModel @Inject constructor(
                 is Result.Failure -> _uiState.value = result.toLoadError()
             }
         }
+    }
+
+    /**
+     * Membatalkan order lewat `POST /customer/orders/{order}/cancel`.
+     *
+     * Tombol hanya tersedia untuk order yang masih `MENUNGGU_PEMBAYARAN`.
+     * Backend tetap sumber kebenaran: `409` ditampilkan sebagai kegagalan, dan
+     * status order baru diambil dari payload response, tidak ditulis lokal.
+     */
+    fun cancelOrder() {
+        if (orderId.isBlank()) return
+        if (_cancelState.value is SubmitState.Submitting) return
+
+        val order = (_uiState.value as? LoadState.Success)?.data ?: return
+        if (!order.canBeCancelled) return
+
+        _cancelState.value = SubmitState.Submitting
+
+        viewModelScope.launch {
+            when (val result = customerRepository.cancelOrder(orderId)) {
+                is Result.Success -> {
+                    // Status `DIBATALKAN` berasal dari response backend.
+                    _uiState.value = LoadState.Success(result.data)
+                    _cancelState.value = SubmitState.Success(result.data.id)
+                }
+                is Result.Failure -> _cancelState.value = result.toSubmitError()
+            }
+        }
+    }
+
+    /** Membersihkan pesan pembatalan setelah ditampilkan. */
+    fun clearCancelState() {
+        _cancelState.value = SubmitState.Idle
     }
 
     companion object {

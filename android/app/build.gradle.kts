@@ -1,3 +1,7 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import java.util.Properties
+import java.net.URI
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -5,6 +9,48 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+}
+
+// API URL dapat dioverride tanpa mengubah source atau menyimpan alamat lokal
+// developer ke dalam repository. Prioritas: -P Gradle, local.properties, default.
+val kyusuiLocalProperties = Properties().apply {
+    rootProject.file("local.properties").takeIf { it.isFile }?.inputStream()?.use { load(it) }
+}
+fun buildConfigString(value: String): String = "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+val debugApiBaseUrl = providers.gradleProperty("kyusuiApiBaseUrl")
+    .orElse(kyusuiLocalProperties.getProperty("KYUSUI_API_BASE_URL") ?: "http://10.0.2.2:8000/api/v1/")
+    .get()
+val releaseApiBaseUrl = providers.gradleProperty("kyusuiProdApiBaseUrl")
+    .orElse(kyusuiLocalProperties.getProperty("KYUSUI_PROD_API_BASE_URL") ?: "https://api.kyusui.example.com/api/v1/")
+    .get()
+
+require(debugApiBaseUrl.endsWith("/")) {
+    "KYUSUI_API_BASE_URL harus diakhiri garis miring (/) untuk Retrofit."
+}
+require(debugApiBaseUrl.startsWith("http://") || debugApiBaseUrl.startsWith("https://")) {
+    "KYUSUI_API_BASE_URL harus berupa URL HTTP(S) lengkap."
+}
+require(releaseApiBaseUrl.startsWith("https://") && releaseApiBaseUrl.endsWith("/")) {
+    "KYUSUI_PROD_API_BASE_URL harus berupa URL HTTPS lengkap dan diakhiri /."
+}
+
+// URL contoh tetap diperbolehkan saat kompilasi debug, tetapi tidak boleh masuk
+// ke artefak release. URL produksi diberikan melalui -PkyusuiProdApiBaseUrl atau
+// local.properties (file lokal ini tidak dibagikan).
+fun validateReleaseApiBaseUrl() {
+    val host = runCatching {
+        URI.create(releaseApiBaseUrl).host?.lowercase()
+    }.getOrNull()
+    require(!host.isNullOrBlank() && host != "example.com" && !host.endsWith(".example.com") && !host.endsWith(".example")) {
+        "Build release diblokir: atur KYUSUI_PROD_API_BASE_URL ke host HTTPS backend produksi yang nyata."
+    }
+}
+
+tasks.configureEach {
+    if (name.contains("Release", ignoreCase = true) &&
+        (name.startsWith("assemble") || name.startsWith("bundle") || name.startsWith("package"))) {
+        doFirst { validateReleaseApiBaseUrl() }
+    }
 }
 
 android {
@@ -24,11 +70,13 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            buildConfigField("String", "API_BASE_URL", buildConfigString(releaseApiBaseUrl))
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
             isDebuggable = true
             isMinifyEnabled = false
+            buildConfigField("String", "API_BASE_URL", buildConfigString(debugApiBaseUrl))
         }
     }
 
@@ -37,11 +85,8 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
 
-    packagingOptions {
+    packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1,LICENSE,NOTICE}"
         }
@@ -50,6 +95,15 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+}
+
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(
+            org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+        )
     }
 }
 
@@ -100,6 +154,17 @@ dependencies {
     implementation(libs.hilt.navigation.compose)
     ksp(libs.hilt.compiler)
 
+    // MapLibre merender peta; play-services-location tetap dipakai untuk GPS kurir.
+    implementation(libs.maplibre.android)
+    implementation(libs.play.services.location)
+
+    // Firebase Cloud Messaging (Phase 8 - notification transport)
+    // FCM hanya transport; backend tetap source of truth.
+    // Tanpa google-services.json, Firebase tidak terinisialisasi dan FCM
+    // otomatis nonaktif. Lihat KyusuiApplication dan FcmMessageTransport.
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
+
     // Testing
     testImplementation(libs.junit)
     testImplementation(libs.junit.jupiter)
@@ -115,13 +180,13 @@ dependencies {
     androidTestImplementation(libs.robolectric)
 }
 
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-    kotlinOptions {
-        freeCompilerArgs += listOf(
-            "-Xopt-in=kotlin.RequiresOptIn",
-            "-Xopt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
-            "-Xopt-in=kotlinx.serialization.ExperimentalSerializationApi",
-            "-Xopt-in=androidx.compose.material3.ExperimentalMaterial3Api"
+tasks.withType<KotlinCompile>().configureEach {
+    compilerOptions {
+        freeCompilerArgs.addAll(
+            "-opt-in=kotlin.RequiresOptIn",
+            "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
+            "-opt-in=kotlinx.serialization.ExperimentalSerializationApi",
+            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api"
         )
     }
 }

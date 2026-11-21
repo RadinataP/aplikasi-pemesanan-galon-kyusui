@@ -176,6 +176,28 @@ class CreateOrderViewModelTest {
         coVerify(exactly = 0) { repository.createOrder(any(), any()) }
     }
 
+    @Test
+    fun `cart with out of range coordinate never reaches the backend`() = runTest(dispatcher) {
+        val viewModel = CreateOrderViewModel(repository)
+
+        val cart = validCart().copy(location = GeoPoint(90.5, 100.4172))
+        assertFalse(viewModel.submitOrder(cart))
+        advanceUntilIdle()
+
+        coVerify(exactly = 0) { repository.createOrder(any(), any()) }
+    }
+
+    @Test
+    fun `cart with placeholder address never reaches the backend`() = runTest(dispatcher) {
+        val viewModel = CreateOrderViewModel(repository)
+
+        val cart = validCart().copy(address = "-")
+        assertFalse(viewModel.submitOrder(cart))
+        advanceUntilIdle()
+
+        coVerify(exactly = 0) { repository.createOrder(any(), any()) }
+    }
+
     // --- Error mapping ---
 
     @Test
@@ -319,6 +341,27 @@ class CreateOrderViewModelTest {
         assertNull(state.previewSubtotal)
         assertFalse(state.canSubmit)
         assertNull(cartViewModel.deliveryLocation())
+    }
+
+    @Test
+    fun `cart with placeholder coordinate is not submittable`() {
+        val cartViewModel = CartViewModel()
+        cartViewModel.addProduct(product())
+        cartViewModel.updateAddress("Jl. Merdeka No. 10")
+        cartViewModel.updateLocation(GeoPoint(0.0, 0.0))
+
+        assertFalse(cartViewModel.uiState.value.canSubmit)
+        assertNull(cartViewModel.deliveryLocation())
+    }
+
+    @Test
+    fun `cart with placeholder address is not submittable`() {
+        val cartViewModel = CartViewModel()
+        cartViewModel.addProduct(product())
+        cartViewModel.updateAddress("-")
+        cartViewModel.updateLocation(GeoPoint(-0.9471, 100.4172))
+
+        assertFalse(cartViewModel.uiState.value.canSubmit)
     }
 
     private fun validCart() = CartUiState(

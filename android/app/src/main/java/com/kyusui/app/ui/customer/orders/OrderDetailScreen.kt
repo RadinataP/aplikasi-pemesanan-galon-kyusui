@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -23,6 +24,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
@@ -30,9 +35,14 @@ import androidx.compose.ui.unit.dp
 import com.kyusui.app.core.Money
 import com.kyusui.app.domain.model.Order
 import com.kyusui.app.ui.components.ErrorState
+import com.kyusui.app.ui.components.InlineError
 import com.kyusui.app.ui.components.LoadingState
+import com.kyusui.app.ui.components.EmptyState
 import com.kyusui.app.ui.components.PrimaryButton
+import com.kyusui.app.ui.components.OutlinedButton
+import com.kyusui.app.ui.components.TextButton
 import com.kyusui.app.ui.state.LoadState
+import com.kyusui.app.ui.state.SubmitState
 
 private const val UNKNOWN_STATUS_LABEL = "Status tidak dikenal"
 
@@ -48,11 +58,15 @@ fun OrderDetailScreen(
     uiState: LoadState<Order>,
     onBack: () -> Unit,
     onRetry: () -> Unit,
+    cancelState: SubmitState = SubmitState.Idle,
+    onCancel: (() -> Unit)? = null,
     onPay: ((orderId: String) -> Unit)? = null,
+    onTrack: ((orderId: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Scaffold(
         modifier = modifier,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text(text = "Detail Pesanan") },
@@ -80,12 +94,21 @@ fun OrderDetailScreen(
                 onRetry = onRetry
             )
 
-            is LoadState.Empty -> LoadingState(modifier = Modifier.padding(innerPadding))
+            is LoadState.Empty -> EmptyState(
+                modifier = Modifier.padding(innerPadding),
+                title = "Pesanan Tidak Ditemukan",
+                message = state.message,
+                actionText = "Coba Lagi",
+                onActionClick = onRetry
+            )
 
             is LoadState.Success -> OrderDetailContent(
                 order = state.data,
+                cancelState = cancelState,
+                onCancel = onCancel,
                 onPay = onPay,
-                modifier = Modifier.padding(innerPadding)
+                modifier = Modifier.padding(innerPadding),
+                onTrack = onTrack
             )
         }
     }
@@ -95,7 +118,10 @@ fun OrderDetailScreen(
 private fun OrderDetailContent(
     order: Order,
     onPay: ((orderId: String) -> Unit)?,
-    modifier: Modifier = Modifier
+    onTrack: ((orderId: String) -> Unit)?,
+    modifier: Modifier = Modifier,
+    cancelState: SubmitState = SubmitState.Idle,
+    onCancel: (() -> Unit)? = null
 ) {
     Column(
         modifier = modifier
@@ -175,8 +201,12 @@ private fun OrderDetailContent(
 
         HorizontalDivider()
 
-        DetailRow(label = "Subtotal", value = Money.format(order.subtotalAmount))
-        DetailRow(label = "Biaya Pengiriman", value = Money.format(order.deliveryFee))
+        DetailRow(label = "Harga produk", value = Money.format(order.subtotalAmount))
+        // Pesanan lama mungkin masih menyimpan ongkir historis. Pesanan baru
+        // selalu memiliki deliveryFee = 0 sehingga baris ini tidak ditampilkan.
+        if (order.deliveryFee.toBigDecimalOrNull()?.compareTo(java.math.BigDecimal.ZERO) == 1) {
+            DetailRow(label = "Biaya Pengiriman", value = Money.format(order.deliveryFee))
+        }
 
         Spacer(Modifier.height(4.dp))
         Row(
@@ -206,6 +236,31 @@ private fun OrderDetailContent(
             )
         }
 
+        // Tombol tracking hanya muncul setelah order ditugaskan ke kurir.
+        // Backend `GET orders/{order}/tracking` hanya mengembalikan assignment
+        // berstatus `ACTIVE`, jadi untuk order yang belum pengiriman aktif
+        // tombol ini akan membuka keadaan kosong. Tombol hanya ditampilkan
+        // setelah statusnya memang memungkinkan.
+        if (onTrack != null && order.orderStatus?.isTrackable() == true) {
+            OutlinedButton(
+                text = "Lacak Pesanan",
+                onClick = { onTrack(order.id) },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        // Pembatalan hanya ditawarkan selama backend masih mengizinkannya
+        // (status `MENUNGGU_PEMBAYARAN`). Konfirmasi diminta karena aksi ini
+        // tidak dapat dikembalikan.
+        if (onCancel != null && order.canBeCancelled) {
+            CancelOrderAction(
+                isCancelling = cancelState is SubmitState.Submitting,
+                errorMessage = (cancelState as? SubmitState.Error)?.message,
+                onCancel = onCancel,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
         if (order.requiresPayment) {
             Text(
                 text = "Menunggu pembayaran",
@@ -215,6 +270,65 @@ private fun OrderDetailContent(
                 modifier = Modifier.fillMaxWidth()
             )
         }
+    }
+}
+
+/**
+ * Tombol pembatalan order dengan dialog konfirmasi.
+ *
+ * Dialog konfirmasi dipakai karena pembatalan tidak dapat dibatalkan lagi.
+ * Selagi request berjalan tombol ditampilkan dalam keadaan memuat supaya
+ * customer tidak mengirim pembatalan ganda.
+ */
+@Composable
+private fun CancelOrderAction(
+    isCancelling: Boolean,
+    errorMessage: String?,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var showConfirmation by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        OutlinedButton(
+            text = if (isCancelling) "Membatalkan..." else "Batalkan Pesanan",
+            onClick = { showConfirmation = true },
+            modifier = Modifier.fillMaxWidth(),
+            isLoading = isCancelling
+        )
+
+        errorMessage?.let { InlineError(message = it) }
+    }
+
+    if (showConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showConfirmation = false },
+            title = { Text(text = "Batalkan Pesanan") },
+            text = {
+                Text(
+                    text = "Pesanan yang dibatalkan tidak dapat dilanjutkan kembali. " +
+                        "Lanjutkan membatalkan pesanan ini?"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    text = "Ya, Batalkan",
+                    onClick = {
+                        showConfirmation = false
+                        onCancel()
+                    }
+                )
+            },
+            dismissButton = {
+                TextButton(
+                    text = "Tidak",
+                    onClick = { showConfirmation = false }
+                )
+            }
+        )
     }
 }
 

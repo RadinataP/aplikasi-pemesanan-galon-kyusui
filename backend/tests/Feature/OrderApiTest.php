@@ -53,8 +53,8 @@ class OrderApiTest extends TestCase
 
         $response->assertCreated()
             ->assertJsonPath('data.subtotal_amount', '30000.00')
-            ->assertJsonPath('data.delivery_fee', '2000.00')
-            ->assertJsonPath('data.total_amount', '32000.00')
+            ->assertJsonPath('data.delivery_fee', '0.00')
+            ->assertJsonPath('data.total_amount', '30000.00')
             ->assertJsonPath('data.order_status', 'MENUNGGU_PEMBAYARAN')
             // Kontrak lokasi tujuan dipakai Android untuk marker dan routing.
             ->assertJsonPath('data.delivery_location.address', 'Jl. Depot')
@@ -68,7 +68,7 @@ class OrderApiTest extends TestCase
 
         $order = Order::firstOrFail();
         $this->assertMatchesRegularExpression('/^ORD-\d{8}-\d{4}$/', $order->order_number);
-        $this->assertDatabaseHas('payments', ['order_id' => $order->id, 'amount' => 32000]);
+        $this->assertDatabaseHas('payments', ['order_id' => $order->id, 'amount' => 30000]);
         $this->assertDatabaseHas('order_status_histories', [
             'order_id' => $order->id,
             'to_status' => 'MENUNGGU_PEMBAYARAN',
@@ -86,7 +86,7 @@ class OrderApiTest extends TestCase
             'payment_method' => 'CASH',
             'subtotal_amount' => 1,
             'total_amount' => 1,
-        ])->assertCreated()->assertJsonPath('data.total_amount', '16000.00');
+        ])->assertCreated()->assertJsonPath('data.total_amount', '15000.00');
 
         $this->assertDatabaseMissing('orders', ['total_amount' => 1]);
     }
@@ -196,6 +196,7 @@ class OrderApiTest extends TestCase
 
         $this->actingAs($ownerUser)->postJson('/api/v1/owner/orders/'.$order['id'].'/payment-verification', [
             'action' => 'REJECT',
+            'note' => 'Bukti pembayaran tidak terbaca.',
         ])->assertOk();
 
         $this->actingAs($user)->post('/api/v1/customer/orders/'.$order['id'].'/payment/proof', [

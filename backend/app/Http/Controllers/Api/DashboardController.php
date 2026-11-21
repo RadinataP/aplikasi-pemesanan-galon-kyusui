@@ -90,15 +90,45 @@ class DashboardController extends Controller
         try {
             $today = today();
             $monthStart = now()->startOfMonth();
+            // Metrik order hanya menghitung operasional. Nilai uang diambil dari
+            // financial_transactions agar sumbernya sama dengan halaman Finance.
             $orderMetrics = DB::table('orders')
                 ->selectRaw('COUNT(*) as total_orders')
                 ->selectRaw('SUM(CASE WHEN order_status = ? THEN 1 ELSE 0 END) as waiting_process', [OrderStatus::MENUNGGU_DIPROSES->value])
                 ->selectRaw('SUM(CASE WHEN order_status = ? THEN 1 ELSE 0 END) as completed_orders', [OrderStatus::SELESAI->value])
-                ->selectRaw('COALESCE(SUM(CASE WHEN order_status = ? AND completed_at >= ? THEN total_amount ELSE 0 END), 0) as today_revenue', [OrderStatus::SELESAI->value, $today])
-                ->selectRaw('COALESCE(SUM(CASE WHEN order_status = ? AND completed_at >= ? THEN total_amount ELSE 0 END), 0) as month_revenue', [OrderStatus::SELESAI->value, $monthStart])
                 ->selectRaw('COALESCE(AVG(CASE WHEN order_status = ? THEN total_amount END), 0) as avg_order_value', [OrderStatus::SELESAI->value])
                 ->selectRaw('COALESCE(100.0 * SUM(CASE WHEN order_status = ? THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 0) as completion_rate', [OrderStatus::SELESAI->value])
                 ->first();
+
+            // Keuangan dashboard wajib identik dengan buku kas: pemasukan hanya
+            // dihitung ketika tercatat sebagai INCOME, bukan dari order selesai.
+            $todayIncome = (float) DB::table('financial_transactions')
+                ->where('type', 'INCOME')->whereDate('occurred_at', $today)->sum('amount');
+            $monthIncome = (float) DB::table('financial_transactions')
+                ->where('type', 'INCOME')
+                ->whereBetween('occurred_at', [$monthStart, now()->endOfMonth()])
+                ->sum('amount');
+            $monthExpense = (float) DB::table('financial_transactions')
+                ->where('type', 'EXPENSE')
+                ->whereBetween('occurred_at', [$monthStart, now()->endOfMonth()])
+                ->sum('amount');
+
+            // Enam bulan kalender terakhir disusun di server agar Android tidak
+            // mengelompokkan tanggal berdasarkan timezone perangkat.
+            $revenueChart = [];
+            for ($offset = 5; $offset >= 0; $offset--) {
+                $month = now()->startOfMonth()->subMonths($offset);
+                $nextMonth = (clone $month)->addMonth();
+                $period = DB::table('financial_transactions')
+                    ->where('occurred_at', '>=', $month)
+                    ->where('occurred_at', '<', $nextMonth);
+                $revenueChart[] = [
+                    'month' => $month->format('Y-m'),
+                    'label' => $month->translatedFormat('M'),
+                    'income' => (float) (clone $period)->where('type', 'INCOME')->sum('amount'),
+                    'expense' => (float) (clone $period)->where('type', 'EXPENSE')->sum('amount'),
+                ];
+            }
             $paymentMetrics = DB::table('payments')
                 ->selectRaw('SUM(CASE WHEN payment_method = ? AND payment_status = ? THEN 1 ELSE 0 END) as waiting_qris_verification', [PaymentMethod::QRIS->value, PaymentStatus::WAITING_VERIFICATION->value])
                 ->first();
@@ -114,11 +144,14 @@ class DashboardController extends Controller
                     'waiting_qris_verification' => (int) $paymentMetrics->waiting_qris_verification,
                     'active_deliveries' => (int) $assignmentMetrics->active_deliveries,
                     'available_products' => Product::where('availability', true)->count(),
-                    'today_revenue' => (float) $orderMetrics->today_revenue,
-                    'month_revenue' => (float) $orderMetrics->month_revenue,
+                    'today_revenue' => $todayIncome,
+                    'month_revenue' => $monthIncome,
+                    'month_expense' => $monthExpense,
+                    'month_net' => $monthIncome - $monthExpense,
                     'avg_order_value' => (float) $orderMetrics->avg_order_value,
                     'completion_rate' => (float) $orderMetrics->completion_rate,
                 ],
+                'revenue_chart' => $revenueChart,
                 'recent_orders' => DashboardOrderResource::collection(
                     Order::with(['customer.user:id,name', 'payment', 'items', 'assignments'])
                         ->latest('id')->limit(5)->get()

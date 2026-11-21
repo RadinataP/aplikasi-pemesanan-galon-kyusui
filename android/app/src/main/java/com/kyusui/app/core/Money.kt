@@ -39,6 +39,21 @@ object Money {
         return total.setScale(2, RoundingMode.HALF_UP).toPlainString()
     }
 
+    /**
+     * Total satu baris untuk preview UX (`unitPrice × quantity`).
+     *
+     * Dipakai di layar keranjang/ringkasan sebelum order dikirim. Nilainya
+     * tetap estimasi: subtotal, delivery fee, dan total final dihitung ulang
+     * backend saat `POST /customer/orders`.
+     */
+    fun lineTotal(unitPrice: String?, quantity: Int): String? {
+        if (quantity <= 0) return null
+        val price = unitPrice?.trim()?.toBigDecimalOrNullSafe() ?: return null
+        return price.multiply(BigDecimal(quantity))
+            .setScale(2, RoundingMode.HALF_UP)
+            .toPlainString()
+    }
+
     fun isValid(raw: String?): Boolean = raw?.trim()?.toBigDecimalOrNullSafe() != null
 
     private fun String.toBigDecimalOrNullSafe(): BigDecimal? =

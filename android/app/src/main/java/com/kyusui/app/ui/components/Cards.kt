@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
@@ -40,7 +39,7 @@ import com.kyusui.app.domain.model.PaymentStatus
 @Composable
 fun KyusuiCard(
     modifier: Modifier = Modifier,
-    elevation: Dp = 1.dp,
+    elevation: Dp = 3.dp,
     colors: CardColors = CardDefaults.cardColors(),
     onClick: (() -> Unit)? = null,
     content: @Composable () -> Unit
@@ -55,7 +54,7 @@ fun KyusuiCard(
         modifier = clickableModifier,
         elevation = CardDefaults.cardElevation(defaultElevation = elevation),
         colors = colors,
-        shape = MaterialTheme.shapes.medium
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
     ) {
         content()
     }
@@ -67,7 +66,7 @@ fun ProductCard(
     name: String,
     price: String,
     imageUrl: String? = null,
-    stock: Int,
+    @Suppress("UNUSED_PARAMETER") stock: Int, // Retained for call-site compatibility; inventory is availability-only.
     isActive: Boolean = true,
     onClick: () -> Unit
 ) {
@@ -103,27 +102,16 @@ fun ProductCard(
                     color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Outlined.Inventory2,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(Modifier.width(4.dp))
+                androidx.compose.material3.Surface(
+                    color = if (isActive) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.errorContainer,
+                    shape = MaterialTheme.shapes.small
+                ) {
                     Text(
-                        text = "Stok: $stock",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = if (isActive) "Tersedia" else "Tidak tersedia",
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isActive) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onErrorContainer
                     )
-                    if (!isActive) {
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = "Tidak Aktif",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
                 }
             }
         }
@@ -213,6 +201,11 @@ fun StatusChip(status: OrderStatus, modifier: Modifier = Modifier) {
         OrderStatus.SELESAI -> {
             containerColor = MaterialTheme.colorScheme.surfaceVariant
             contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+        }
+
+        OrderStatus.DIBATALKAN -> {
+            containerColor = MaterialTheme.colorScheme.errorContainer
+            contentColor = MaterialTheme.colorScheme.onErrorContainer
         }
     }
 

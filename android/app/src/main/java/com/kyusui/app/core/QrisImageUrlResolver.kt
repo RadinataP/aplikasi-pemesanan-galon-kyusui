@@ -1,5 +1,7 @@
 package com.kyusui.app.core
 
+import com.kyusui.app.BuildConfig
+
 /**
  * Menerjemahkan nilai `qris_image` dari backend menjadi URL absolut yang bisa
  * dimuat Coil.
@@ -12,7 +14,7 @@ package com.kyusui.app.core
  *
  * Android tidak boleh menebak-nebak bentuk tersebut, dan tidak boleh memuat
  * dari host bebas. Resolusi selalu diarahkan ke origin API yang sudah
- * ditentukan [Constants], sehingga `qris_image` tidak bisa dipakai backend (atau
+ * ditentukan [BuildConfig], sehingga `qris_image` tidak bisa dipakai backend (atau
  * apa pun yang menyamar sebagai backend) untuk mengarahkan perangkat ke host
  * lain.
  *
@@ -26,7 +28,7 @@ object QrisImageUrlResolver {
      * @param apiBaseUrl base URL API, misal `http://10.0.2.2:8000/api/v1/`.
      * @return URL absolut, atau `null` bila nilainya kosong/tidak bisa dipakai.
      */
-    fun resolve(raw: String?, apiBaseUrl: String = Constants.BASE_URL_DEV): String? {
+    fun resolve(raw: String?, apiBaseUrl: String = BuildConfig.API_BASE_URL): String? {
         val value = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
 
         // URL absolute dari backend (misal signed temporary URL) dipakai apa

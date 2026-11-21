@@ -148,7 +148,6 @@ class OrderController extends Controller
                     ->keyBy('id');
 
                 $subtotal = '0.00';
-                $totalQuantity = 0; // Ongkir ditentukan dari jumlah galon, bukan jarak.
                 $orderItems = [];
 
                 foreach ($validated['items'] as $item) {
@@ -157,7 +156,6 @@ class OrderController extends Controller
 
                     $lineTotal = bcmul((string) $product->price, (string) $item['quantity'], 2);
                     $subtotal = bcadd($subtotal, $lineTotal, 2);
-                    $totalQuantity += (int) $item['quantity'];
                     $orderItems[] = [
                         'product_id' => $product->id,
                         'product_name' => $product->name,
@@ -167,8 +165,11 @@ class OrderController extends Controller
                     ];
                 }
 
-                $deliveryFee = $this->calculateDeliveryFee($deliveryLatitude, $deliveryLongitude, $totalQuantity);
-                $totalAmount = bcadd($subtotal, number_format($deliveryFee, 2, '.', ''), 2);
+                // Berkah Water tidak mengenakan biaya antar. Lokasi tetap
+                // divalidasi agar pesanan berada dalam area layanan.
+                $this->validateDeliveryArea($deliveryLatitude, $deliveryLongitude);
+                $deliveryFee = 0;
+                $totalAmount = $subtotal;
 
                 $order = Order::create([
                     'customer_id' => $customer->id,
@@ -363,15 +364,13 @@ class OrderController extends Controller
         return BusinessSetting::active()->hasActiveQris();
     }
 
-    private function calculateDeliveryFee(float $latitude, float $longitude, int $gallonQuantity): float
+    private function validateDeliveryArea(float $latitude, float $longitude): void
     {
-        // Pusat dan radius area layanan adalah konfigurasi bisnis, bukan nilai
-        // yang ditanam langsung di controller. Default dipertahankan sama
-        // dengan koordinat sementara sebelumnya sampai Owner menetapkan titik depot.
+        // Pusat dan radius area layanan tetap menjadi konfigurasi bisnis.
+        // Validasi area tidak menambahkan biaya apa pun ke harga pesanan.
         $centerLatitude = (float) config('kyusui.service_area.latitude');
         $centerLongitude = (float) config('kyusui.service_area.longitude');
         $radiusKm = (float) config('kyusui.service_area.radius_km', 10);
-        $feePerGallon = (int) config('kyusui.delivery.fee_per_gallon', 1000);
 
         $distance = $this->calculateDistance(
             $latitude,
@@ -385,10 +384,6 @@ class OrderController extends Controller
             422,
             'Alamat di luar area layanan kami (maksimal '.rtrim(rtrim(number_format($radiusKm, 2, '.', ''), '0'), '.').' km).',
         );
-
-        // Ongkir = tarif per galon × jumlah galon. Jarak hanya dipakai untuk
-        // validasi area layanan; jarak tidak lagi menambah ongkir.
-        return max(0, $feePerGallon) * max(0, $gallonQuantity);
     }
 
     private function calculateDistance(float $latitudeFrom, float $longitudeFrom, float $latitudeTo, float $longitudeTo): float

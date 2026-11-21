@@ -1,7 +1,7 @@
 package com.kyusui.app.domain.model
 
 /**
- * Product Resource sesuai `06_KYUSUI_API_SPECIFICATION_REBUILT.md` section 7.3.
+ * Product Resource sesuai `06_Berkah Water_API_SPECIFICATION_REBUILT.md` section 7.3.
  *
  * `price` adalah decimal string yang dikirim backend dan tidak pernah dihitung
  * ulang di Android. `isAvailable` mengikuti nilai `is_available` dari backend,
@@ -30,7 +30,9 @@ data class Order(
     val deliveryFee: String,
     val totalAmount: String,
     val orderStatus: OrderStatus?,
-    val payment: OrderPayment? = null
+    val payment: OrderPayment? = null,
+    // Lokasi tujuan dari backend untuk marker tujuan dan routing. Nullable untuk kompatibilitas order lama.
+    val deliveryLocation: DeliveryLocation? = null
 ) {
     val requiresPayment: Boolean
         get() = payment?.paymentStatus == PaymentStatus.PENDING ||
@@ -38,6 +40,15 @@ data class Order(
 
     val canBePaid: Boolean
         get() = payment?.paymentStatus == PaymentStatus.PENDING
+
+    /**
+     * Backend hanya mengizinkan pembatalan saat order masih
+     * `MENUNGGU_PEMBAYARAN` (`POST /customer/orders/{order}/cancel` menjawab
+     * `409` untuk status lain). Android memakai ini hanya untuk menampilkan
+     * tombol; validasi transisi tetap milik backend.
+     */
+    val canBeCancelled: Boolean
+        get() = orderStatus == OrderStatus.MENUNGGU_PEMBAYARAN
 }
 
 data class OrderItem(
@@ -70,12 +81,38 @@ enum class OrderStatus(val apiValue: String, val displayName: String) {
     DIPROSES("DIPROSES", "Diproses"),
     DITUGASKAN("DITUGASKAN", "Ditugaskan"),
     DALAM_PENGANTARAN("DALAM_PENGANTARAN", "Dalam Pengantaran"),
-    SELESAI("SELESAI", "Selesai");
+    SELESAI("SELESAI", "Selesai"),
+    DIBATALKAN("DIBATALKAN", "Dibatalkan");
 
     companion object {
         fun fromApiValue(value: String?): OrderStatus? =
             value?.trim()?.let { raw -> entries.firstOrNull { it.apiValue == raw } }
     }
+
+    /**
+     * True untuk status ketika posisi kurir masih relevan.
+     *
+     * `GET orders/{order}/tracking` hanya mengembalikan assignment berstatus
+     * `ACTIVE`, jadi untuk status lain backend menjawab `data: null`. Menampilkan
+     * tombol lacak untuk `MENUNGGU_PEMBAYARAN` atau `DIPROSES` hanya membuat
+     * pengguna membuka layar yang pasti kosong.
+     *
+     * `SELESAI` sengaja tidak termasuk. Backend memang sudah tidak mengirim
+     * posisi untuk order yang selesai, jadi tombol lacak tidak akan
+     * menampilkan apa pun.
+     */
+    fun isTrackable(): Boolean =
+        this == DITUGASKAN || this == DALAM_PENGANTARAN
+
+    /**
+     * True untuk status akhir ketika pengiriman tidak mungkin berlanjut.
+     *
+     * Dipakai tracking untuk berhenti memanggil endpoint begitu order selesai
+     * atau dibatalkan, alih-alih melakukan polling selamanya pada order yang
+     * sudah tidak dapat dilacak.
+     */
+    fun isTerminal(): Boolean =
+        this == SELESAI || this == DIBATALKAN
 }
 
 enum class PaymentMethod(val apiValue: String, val displayName: String) {

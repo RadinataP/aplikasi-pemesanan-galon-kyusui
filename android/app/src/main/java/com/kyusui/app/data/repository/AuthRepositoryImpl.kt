@@ -49,7 +49,7 @@ class AuthRepositoryImpl @Inject constructor(
             AuthRegisterRequestDto(
                 name = request.name.trim(),
                 phone = request.phone.trim(),
-                email = request.email?.trim()?.takeIf { it.isNotEmpty() },
+                email = request.email.trim(),
                 password = request.password,
                 passwordConfirmation = request.passwordConfirmation
             )
@@ -62,7 +62,7 @@ class AuthRepositoryImpl @Inject constructor(
     override suspend fun login(request: LoginRequest): Result<AuthResult> = safeApiCall {
         val envelope = authApi.login(
             AuthLoginRequestDto(
-                login = request.login.trim(),
+                email = request.email.trim(),
                 password = request.password
             )
         )

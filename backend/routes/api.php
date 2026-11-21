@@ -121,6 +121,16 @@ Route::prefix('v1')->group(function () {
             ->get('customer/payment/qris/image', [PaymentController::class, 'activeQrisImage'])
             ->name('customer.qris.image');
 
+        // Shared depot payment operations: Owner and Courier may inspect and
+        // verify QRIS proof. Atomic locking in OwnerController prevents double decisions.
+        Route::prefix('owner')->middleware('role:OWNER,COURIER')->group(function () {
+            Route::get('payments/pending', [OwnerController::class, 'pending'])->name('api.v1.owner.payments.pending');
+            Route::get('orders/{order}/payment/proof', [OwnerController::class, 'proof'])->name('api.v1.owner.orders.payment.proof');
+            Route::get('orders/{order}/payment/proof-history', [OwnerController::class, 'proofHistory'])->name('api.v1.owner.orders.payment.proof-history');
+            Route::get('orders/{order}/payment/proof-history/{history}/proof', [OwnerController::class, 'historicalProof'])->name('api.v1.owner.orders.payment.proof-history.proof');
+            Route::post('orders/{order}/payment-verification', [OwnerController::class, 'verifyOrderPayment'])->name('api.v1.owner.orders.payment-verification');
+        });
+
         // --- OWNER (spec 06 section 10, 12, dan 13) ---
         Route::prefix('owner')->middleware('role:OWNER')->group(function () {
             // preserved: katalog spec tidak mendefinisikan endpoint produk owner
@@ -139,11 +149,6 @@ Route::prefix('v1')->group(function () {
             Route::post('orders/{order}/assignment', [OwnerController::class, 'assign'])
                 ->name('api.v1.owner.orders.assignment');
 
-            Route::get('payments/pending', [OwnerController::class, 'pending'])->name('api.v1.owner.payments.pending');
-            Route::get('orders/{order}/payment/proof', [OwnerController::class, 'proof'])
-                ->name('api.v1.owner.orders.payment.proof');
-            Route::post('orders/{order}/payment-verification', [OwnerController::class, 'verifyOrderPayment'])
-                ->name('api.v1.owner.orders.payment-verification');
 
             Route::get('payment/qris', [OwnerController::class, 'qris'])->name('api.v1.owner.payment.qris.show');
             Route::put('payment/qris', [OwnerController::class, 'updateQris'])->name('api.v1.owner.payment.qris.update');

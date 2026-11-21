@@ -1,0 +1,14 @@
+# Contoh konfigurasi lokal KYŪSUI Android.
+# Jangan mengganti seluruh local.properties dengan file ini: pertahankan sdk.dir.
+# Tambahkan baris yang diperlukan ke android/local.properties (file ini tidak di-commit).
+
+# Android Emulator: 10.0.2.2 menunjuk ke host komputer.
+KYUSUI_API_BASE_URL=http://10.0.2.2:8000/api/v1/
+
+# Untuk perangkat fisik, ganti host dengan IP LAN komputer yang menjalankan Laravel.
+# Contoh format: http://192.168.x.x:8000/api/v1/
+
+# URL backend HTTPS untuk release harus merupakan URL backend yang benar-benar deployed.
+KYUSUI_PROD_API_BASE_URL=https://api.kyusui.example.com/api/v1/
+
+# Peta menggunakan MapLibre + OpenFreeMap; tidak memerlukan Google Maps API key.

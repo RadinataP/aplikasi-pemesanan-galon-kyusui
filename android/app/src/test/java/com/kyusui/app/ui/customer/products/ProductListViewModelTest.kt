@@ -76,7 +76,7 @@ class ProductListViewModelTest {
         val productsState = viewModel.uiState.value.productsState
         assertTrue(productsState is LoadState.Empty)
         assertEquals(
-            ProductListViewModel.EMPTY_PRODUCTS_MESSAGE,
+            ProductListUiState.EMPTY_PRODUCTS_MESSAGE,
             (productsState as LoadState.Empty).message
         )
     }

@@ -1,8 +1,12 @@
 package com.kyusui.app.core
 
+import com.kyusui.app.BuildConfig
+
+/** Konstanta lintas lapisan aplikasi. URL API ditentukan per build variant. */
 object Constants {
-    const val BASE_URL_PROD = "https://api.kyusui.example.com/api/v1/"
-    const val BASE_URL_DEV = "http://10.0.2.2:8000/api/v1/"
+    /** URL API yang aktif pada build debug/release saat ini. */
+    val API_BASE_URL: String get() = BuildConfig.API_BASE_URL
+
     const val AUTH_HEADER = "Authorization"
     const val ACCEPT_HEADER = "Accept"
     const val BEARER_PREFIX = "Bearer "

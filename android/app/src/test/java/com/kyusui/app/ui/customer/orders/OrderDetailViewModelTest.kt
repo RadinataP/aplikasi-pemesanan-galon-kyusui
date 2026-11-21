@@ -1,6 +1,7 @@
 package com.kyusui.app.ui.customer.orders
 
 import androidx.lifecycle.SavedStateHandle
+import com.kyusui.app.core.ConflictException
 import com.kyusui.app.core.NoNetworkException
 import com.kyusui.app.core.Result
 import com.kyusui.app.core.UnauthorizedException
@@ -12,6 +13,7 @@ import com.kyusui.app.domain.model.PaymentMethod
 import com.kyusui.app.domain.model.PaymentStatus
 import com.kyusui.app.domain.repository.CustomerRepository
 import com.kyusui.app.ui.state.LoadState
+import com.kyusui.app.ui.state.SubmitState
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -146,6 +148,98 @@ class OrderDetailViewModelTest {
         val state = viewModel.uiState.value as LoadState.Success
         assertNull(state.data.payment?.paymentStatus)
     }
+
+    // --- Pembatalan order ---
+
+    @Test
+    fun `cancel is sent while the order is still waiting for payment`() = runTest(dispatcher) {
+        coEvery { repository.getOrder("1001") } returns
+            Result.success(order(status = "MENUNGGU_PEMBAYARAN"))
+        coEvery { repository.cancelOrder("1001") } returns
+            Result.success(order(status = "DIBATALKAN"))
+
+        val viewModel = viewModel("1001")
+        advanceUntilIdle()
+
+        viewModel.cancelOrder()
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { repository.cancelOrder("1001") }
+        assertTrue(viewModel.cancelState.value is SubmitState.Success)
+        // Status `DIBATALKAN` berasal dari response, bukan ditulis Android.
+        val state = viewModel.uiState.value as LoadState.Success
+        assertEquals(OrderStatus.DIBATALKAN, state.data.orderStatus)
+    }
+
+    @Test
+    fun `cancel status is taken from the server response`() = runTest(dispatcher) {
+        coEvery { repository.getOrder("1001") } returns
+            Result.success(order(status = "MENUNGGU_PEMBAYARAN"))
+        // Backend boleh menjawab dengan status lain; Android mengikuti response.
+        coEvery { repository.cancelOrder("1001") } returns
+            Result.success(order(status = "MENUNGGU_PEMBAYARAN"))
+
+        val viewModel = viewModel("1001")
+        advanceUntilIdle()
+        viewModel.cancelOrder()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as LoadState.Success
+        assertEquals(OrderStatus.MENUNGGU_PEMBAYARAN, state.data.orderStatus)
+    }
+
+    @Test
+    fun `cancel is not sent once the order leaves the waiting payment stage`() =
+        runTest(dispatcher) {
+            coEvery { repository.getOrder("1001") } returns
+                Result.success(order(status = "DIPROSES"))
+
+            val viewModel = viewModel("1001")
+            advanceUntilIdle()
+            viewModel.cancelOrder()
+            advanceUntilIdle()
+
+            // Pembatalan hanya diizinkan backend pada `MENUNGGU_PEMBAYARAN`;
+            // Android tidak mengirim request yang pasti ditolak.
+            coVerify(exactly = 0) { repository.cancelOrder(any()) }
+            assertEquals(SubmitState.Idle, viewModel.cancelState.value)
+        }
+
+    @Test
+    fun `duplicate cancel is sent only once`() = runTest(dispatcher) {
+        coEvery { repository.getOrder("1001") } returns
+            Result.success(order(status = "MENUNGGU_PEMBAYARAN"))
+        coEvery { repository.cancelOrder("1001") } returns
+            Result.success(order(status = "DIBATALKAN"))
+
+        val viewModel = viewModel("1001")
+        advanceUntilIdle()
+        viewModel.cancelOrder()
+        viewModel.cancelOrder()
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { repository.cancelOrder("1001") }
+    }
+
+    @Test
+    fun `conflict on cancel is shown as an error and keeps the order`() =
+        runTest(dispatcher) {
+            coEvery { repository.getOrder("1001") } returns
+                Result.success(order(status = "MENUNGGU_PEMBAYARAN"))
+            coEvery { repository.cancelOrder("1001") } returns
+                Result.failure(ConflictException(message = "Pesanan tidak dapat dibatalkan."))
+
+            val viewModel = viewModel("1001")
+            advanceUntilIdle()
+            viewModel.cancelOrder()
+            advanceUntilIdle()
+
+            assertTrue(viewModel.cancelState.value is SubmitState.Error)
+            // Order tetap menampilkan status terakhir dari server; Android tidak
+            // menebak `DIBATALKAN` setelah backend menolak.
+            val state = viewModel.uiState.value as LoadState.Success
+            assertEquals(OrderStatus.MENUNGGU_PEMBAYARAN, state.data.orderStatus)
+        }
 
     private fun viewModel(orderId: String) = OrderDetailViewModel(
         customerRepository = repository,

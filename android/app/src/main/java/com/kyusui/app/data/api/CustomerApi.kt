@@ -14,7 +14,7 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 
 /**
- * Customer API sesuai `06_KYUSUI_API_SPECIFICATION_REBUILT.md` section 9 dan 11.
+ * Customer API sesuai `06_Berkah Water_API_SPECIFICATION_REBUILT.md` section 9 dan 11.
  *
  * Hanya endpoint yang benar-benar tertulis di specification:
  * - `GET /customer/profile`    (9.1)
@@ -56,13 +56,64 @@ interface CustomerApi {
     @GET("customer/orders")
     suspend fun orders(
         @Query("page") page: Int = 1,
-        @Query("per_page") perPage: Int = DEFAULT_PER_PAGE
+        @Query("per_page") perPage: Int = DEFAULT_PER_PAGE,
+        /**
+         * Nilai pasti `order_status`. Backend menerima satu status, beberapa
+         * status dipisah koma, atau diulang; Android mengirim gabungan dipisah
+         * koma. `null` berarti tanpa filter.
+         */
+        @Query("order_status") orderStatus: String? = null
     ): PageDto<CustomerOrderDto>
 
     @GET("customer/orders/{order}")
     suspend fun order(
         @Path("order") orderId: String
     ): EnvelopeDto<CustomerOrderDto>
+
+    /**
+     * Membatalkan order.
+     *
+     * Backend hanya menerima pembatalan saat order masih `MENUNGGU_PEMBAYARAN`
+     * dan menjawab `409` untuk status lain. Endpoint ini ada di
+     * `backend/routes/api.php` sebagai `preserved`, jadi Android mengikuti
+     * kontrak backend yang benar-benar berjalan.
+     */
+    @POST("customer/orders/{order}/cancel")
+    suspend fun cancelOrder(
+        @Path("order") orderId: String
+    ): Response<EnvelopeDto<CustomerOrderDto>>
+
+    // --- Tracking (Phase 7) ---
+
+    /**
+     * Posisi kurir untuk satu order milik customer yang sedang login.
+     *
+     * ## Path
+     *
+     * Path-nya `orders/{order}/tracking`, bukan
+     * `customer/orders/{order}/tracking`. Backend mendaftarkan route ini di
+     * dalam `prefix('orders')->middleware(['role:CUSTOMER', 'throttle:5,1'])`
+     * dan tidak ada prefix `customer` di atasnya. Path lain di antarmuka ini
+     * masih memakai bentuk `customer/...` dari specification; lihat
+     * `Berkah Water_SPECIFICATION_VS_BACKEND_ISSUES.md` untuk tabel lengkapnya.
+     *
+     * ## Batas laju
+     *
+     * Route ini berada di bawah `throttle:5,1`, jadi maksimal 5 permintaan per
+     * menit. Interval polling tidak boleh lebih cepat dari 12 detik; lihat
+     * [com.kyusui.app.core.TrackingIntervals].
+     *
+     * ## Wajib dibaca sebagai nullable
+     *
+     * `data` sengaja dikembalikan apa adanya. Backend hanya memuat assignment
+     * berstatus `ACTIVE`, jadi `data: null` berarti tidak ada pengiriman aktif
+     * dan itu jawaban normal, bukan kegagalan. Repository yang memetakannya ke
+     * `OrderTrackingResult`.
+     */
+    @GET("customer/orders/{order}/tracking")
+    suspend fun tracking(
+        @Path("order") orderId: String
+    ): EnvelopeDto<CustomerTrackingDto>
 
     // --- Section 11.1 Customer — Get Active QRIS ---
 
@@ -105,9 +156,13 @@ interface CustomerApi {
     // --- Section 11.5 Customer — Upload QRIS Payment Proof ---
 
     /**
-     * Multipart dengan form field `proof_image`. Response sukses hanya berarti
-     * `WAITING_VERIFICATION`; `PAID` tetap milik backend.
+     * Upload bukti pembayaran QRIS menggunakan multipart/form-data.
+     *
+     * Response sukses berarti WAITING_VERIFICATION.
+     * Status PAID tetap ditentukan oleh backend.
      */
+
+    @Multipart
     @POST("customer/orders/{order}/payment/proof")
     suspend fun uploadQrIsProof(
         @Path("order") orderId: String,
@@ -199,7 +254,48 @@ data class CustomerOrderDto(
     val delivery_fee: String = "0.00",
     val total_amount: String = "0.00",
     val order_status: String? = null,
+    // Field tambahan dari backend patch: koordinat dan alamat tujuan pengiriman.
+    val delivery_location: CustomerDeliveryLocationDto? = null,
     val payment: CustomerOrderPaymentDto? = null
+)
+
+/**
+ * Isi `data` pada `GET orders/{order}/tracking`.
+ *
+ * Backend mengembalikan model `CourierAssignment` apa adanya, bukan API
+ * Resource, jadi nama field-nya sama persis dengan nama kolom di
+ * `courier_assignments`. Konsekuensinya bentuknya berbeda dari
+ * `CourierAssignmentDto` milik kurir: di sini `courier_id` memang ada, dan
+ * tidak ada blok `order` maupun `customer`.
+ *
+ * `status` dibaca sebagai string mentah dan dipetakan di mapper supaya nilai
+ * yang tidak dikenal menjadi `null` dan tidak ditebak menjadi status yang
+ * salah.
+ *
+ * `locations` memakai [CourierLocationDto] yang sudah ada karena backend
+ * menyerialkan `courier_locations` dengan model Eloquent penuh pada kedua
+ * endpoint, jadi bentuk keduanya identik: koordinat `decimal` datang sebagai
+ * string dan urutannya `latest('recorded_at')->limit(10)`, terbaru lebih dulu.
+ */
+@Serializable
+data class CustomerTrackingDto(
+    @Serializable(with = TolerantIdSerializer::class) val id: Long,
+    @Serializable(with = TolerantIdSerializer::class) val order_id: Long? = null,
+    @Serializable(with = TolerantIdSerializer::class) val courier_id: Long? = null,
+    val status: String? = null,
+    val assigned_at: String? = null,
+    val started_at: String? = null,
+    val completed_at: String? = null,
+    val locations: List<CourierLocationDto> = emptyList()
+)
+
+/** Lokasi tujuan yang dikembalikan OrderResource Laravel. Berbeda dari
+ * DeliveryLocationDto di bawah yang merupakan payload request pembuatan order. */
+@Serializable
+data class CustomerDeliveryLocationDto(
+    val address: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null
 )
 
 @Serializable

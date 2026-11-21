@@ -33,18 +33,23 @@ import com.kyusui.app.core.Money
 import com.kyusui.app.domain.model.Order
 import com.kyusui.app.ui.components.EmptyState
 import com.kyusui.app.ui.components.ErrorState
+import com.kyusui.app.ui.components.InlineError
 import com.kyusui.app.ui.components.LoadingState
 import com.kyusui.app.ui.state.LoadState
+import com.kyusui.app.ui.customer.CustomerBottomBar
+import com.kyusui.app.ui.customer.CustomerTab
 
 private const val UNKNOWN_STATUS_LABEL = "Status tidak dikenal"
 private const val LOAD_MORE_THRESHOLD = 3
 private const val APPENDING_KEY = "appending-indicator"
+private const val APPEND_ERROR_KEY = "append-error"
 
 /**
  * Riwayat pesanan customer dari `GET /customer/orders`.
  *
- * Filter status diterapkan pada data yang sudah dimuat karena specification
- * tidak menyediakan parameter filter pada endpoint ini.
+ * Tab "Semua"/"Aktif"/"Selesai" diterapkan pada data yang sudah dimuat.
+ * Backend hanya menerima satu nilai `order_status` pasti, sedangkan "Aktif"
+ * mencakup banyak status, sehingga grouping dilakukan di client.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,17 +58,29 @@ fun OrderHistoryScreen(
     onBack: () -> Unit,
     onRetry: () -> Unit,
     onLoadMore: () -> Unit,
+    onRetryLoadMore: () -> Unit,
     onFilterChange: (OrderStatusFilter) -> Unit,
     onOrderClick: (Order) -> Unit,
+    onNavigateHome: () -> Unit,
+    onNavigateProducts: () -> Unit,
+    onNavigateAccount: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
 
     // Infinite scroll mengikuti daftar yang sedang difilter, sehingga customer
     // yang memfilter "Selesai" tetap bisa memuat halaman order lama.
-    val shouldLoadMore by remember(uiState.hasMore, uiState.isAppending, uiState.filteredOrders) {
+    val shouldLoadMore by remember(
+        uiState.hasMore,
+        uiState.isAppending,
+        uiState.appendErrorMessage,
+        uiState.filteredOrders
+    ) {
         derivedStateOf {
             if (!uiState.hasMore || uiState.isAppending) return@derivedStateOf false
+            // Kegagalan ditangani lewat tombol "Coba lagi", bukan retry otomatis
+            // yang berulang saat daftar digulir.
+            if (uiState.appendErrorMessage != null) return@derivedStateOf false
             val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
             val total = listState.layoutInfo.totalItemsCount
             total > 0 && lastVisible >= total - LOAD_MORE_THRESHOLD
@@ -76,9 +93,13 @@ fun OrderHistoryScreen(
 
     Scaffold(
         modifier = modifier,
+        containerColor = MaterialTheme.colorScheme.background,
+        bottomBar = {
+            CustomerBottomBar(selected = CustomerTab.ORDERS, onHome = onNavigateHome, onProducts = onNavigateProducts, onOrders = {}, onAccount = onNavigateAccount)
+        },
         topBar = {
             TopAppBar(
-                title = { Text(text = "Riwayat Pesanan") },
+                title = { Text(text = "Pesanan Saya", style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -155,6 +176,14 @@ fun OrderHistoryScreen(
                         if (uiState.isAppending) {
                             item(key = APPENDING_KEY) {
                                 LoadingState(message = "Memuat pesanan lainnya...")
+                            }
+                        }
+
+                        // Kegagalan memuat halaman berikutnya tidak menghapus
+                        // order yang sudah tampil; customer bisa mencoba lagi.
+                        uiState.appendErrorMessage?.let { message ->
+                            item(key = APPEND_ERROR_KEY) {
+                                InlineError(message = message, onRetry = onRetryLoadMore)
                             }
                         }
                     }

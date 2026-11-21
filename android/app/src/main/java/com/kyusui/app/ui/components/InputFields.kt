@@ -1,16 +1,19 @@
+
 package com.kyusui.app.ui.components
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -25,9 +28,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.PopupProperties
+import com.kyusui.app.ui.theme.KyusuiSpacing
 
 @Composable
 fun InputField(
@@ -45,20 +51,32 @@ fun InputField(
     trailingIcon: ImageVector? = null,
     onTrailingIconClick: (() -> Unit)? = null,
     maxLines: Int = 1,
-    singleLine: Boolean = true
+    singleLine: Boolean = true,
+    imeAction: ImeAction = ImeAction.Next,
+    onImeAction: (() -> Unit)? = null,
+    trailingIconContentDescription: String? = null
 ) {
-    Column(modifier = modifier.fillMaxWidth()) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text(text = label, style = MaterialTheme.typography.bodySmall) },
-            placeholder = { if (placeholder.isNotEmpty()) Text(text = placeholder) },
+            modifier = modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+            label = {
+                Text(text = label, style = MaterialTheme.typography.bodySmall)
+            },
+            placeholder = {
+                if (placeholder.isNotEmpty()) Text(text = placeholder)
+            },
             isError = isError,
             enabled = isEnabled,
             singleLine = singleLine,
             maxLines = maxLines,
-            keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+            keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
+            keyboardActions = KeyboardActions(
+                onNext = { onImeAction?.invoke() },
+                onDone = { onImeAction?.invoke() }
+            ),
             visualTransformation = visualTransformation,
             leadingIcon = leadingIcon?.let { vector ->
                 {
@@ -73,25 +91,35 @@ fun InputField(
                 {
                     IconButton(
                         onClick = { onTrailingIconClick?.invoke() },
-                        enabled = isEnabled
+                        enabled = isEnabled && onTrailingIconClick != null
                     ) {
                         Icon(
                             imageVector = vector,
-                            contentDescription = null,
+                            contentDescription = trailingIconContentDescription,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
             },
             colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                errorContainerColor = MaterialTheme.colorScheme.surface,
                 focusedBorderColor = MaterialTheme.colorScheme.primary,
                 unfocusedBorderColor = if (isError) {
                     MaterialTheme.colorScheme.error
                 } else {
                     MaterialTheme.colorScheme.outline
-                }
+                },
+                disabledBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                errorBorderColor = MaterialTheme.colorScheme.error,
+                cursorColor = MaterialTheme.colorScheme.primary
             )
         )
+
         FieldErrorMessage(errorMessage)
     }
 }
@@ -107,9 +135,13 @@ fun PasswordField(
     errorMessage: String? = null,
     isEnabled: Boolean = true,
     isInitiallyVisible: Boolean = false,
-    onVisibilityToggle: (() -> Unit)? = null
+    onVisibilityToggle: (() -> Unit)? = null,
+    imeAction: ImeAction = ImeAction.Next,
+    onImeAction: (() -> Unit)? = null
 ) {
-    var isVisible by remember { mutableStateOf(isInitiallyVisible) }
+    var isVisible by remember {
+        mutableStateOf(isInitiallyVisible)
+    }
 
     InputField(
         label = label,
@@ -121,8 +153,19 @@ fun PasswordField(
         errorMessage = errorMessage,
         isEnabled = isEnabled,
         keyboardType = KeyboardType.Password,
-        visualTransformation = if (isVisible) VisualTransformation.None else PasswordVisualTransformation(),
-        trailingIcon = if (isVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+        imeAction = imeAction,
+        onImeAction = onImeAction,
+        trailingIconContentDescription = if (isVisible) "Sembunyikan kata sandi" else "Tampilkan kata sandi",
+        visualTransformation = if (isVisible) {
+            VisualTransformation.None
+        } else {
+            PasswordVisualTransformation()
+        },
+        trailingIcon = if (isVisible) {
+            Icons.Outlined.VisibilityOff
+        } else {
+            Icons.Outlined.Visibility
+        },
         onTrailingIconClick = {
             isVisible = !isVisible
             onVisibilityToggle?.invoke()
@@ -130,6 +173,7 @@ fun PasswordField(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DropdownField(
     label: String,
@@ -142,33 +186,41 @@ fun DropdownField(
     errorMessage: String? = null,
     isEnabled: Boolean = true
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by remember {
+        mutableStateOf(false)
+    }
 
-    ExposedDropdownMenuBox(
-        modifier = modifier.fillMaxWidth(),
-        expanded = expanded,
-        onExpandedChange = { if (isEnabled) expanded = !expanded }
-    ) {
+    Column(modifier = modifier.fillMaxWidth()) {
         OutlinedTextField(
             value = selectedOption ?: placeholder,
             onValueChange = {},
-            modifier = Modifier
-                .fillMaxWidth()
-                .menuAnchor(),
-            label = { Text(text = label, style = MaterialTheme.typography.bodySmall) },
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            label = {
+                Text(text = label, style = MaterialTheme.typography.bodySmall)
+            },
             readOnly = true,
             enabled = isEnabled,
             isError = isError,
             trailingIcon = {
-                Icon(
-                    imageVector = if (expanded) {
-                        Icons.Outlined.KeyboardArrowUp
-                    } else {
-                        Icons.Outlined.KeyboardArrowDown
-                    },
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                IconButton(
+                    onClick = { expanded = !expanded },
+                    enabled = isEnabled
+                ) {
+                    Icon(
+                        imageVector = if (expanded) {
+                            Icons.Outlined.KeyboardArrowUp
+                        } else {
+                            Icons.Outlined.KeyboardArrowDown
+                        },
+                        contentDescription = if (expanded) {
+                            "Tutup pilihan"
+                        } else {
+                            "Buka pilihan"
+                        },
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -180,9 +232,11 @@ fun DropdownField(
                 disabledBorderColor = MaterialTheme.colorScheme.outlineVariant
             )
         )
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
+
+        DropdownMenu(
+            expanded = expanded && isEnabled,
+            onDismissRequest = { expanded = false },
+            properties = PopupProperties(focusable = true)
         ) {
             options.forEach { option ->
                 DropdownMenuItem(
@@ -190,21 +244,24 @@ fun DropdownField(
                     onClick = {
                         onOptionSelected(option)
                         expanded = false
-                    }
+                    },
+                    enabled = isEnabled
                 )
             }
         }
+
+        FieldErrorMessage(errorMessage)
     }
-    FieldErrorMessage(errorMessage)
 }
 
 @Composable
 private fun FieldErrorMessage(errorMessage: String?) {
     if (errorMessage == null) return
+
     Text(
         text = errorMessage,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.error,
-        modifier = Modifier.padding(top = 4.dp, start = 12.dp)
+        modifier = Modifier.padding(top = KyusuiSpacing.Xs, start = KyusuiSpacing.Lg - KyusuiSpacing.Xs)
     )
 }

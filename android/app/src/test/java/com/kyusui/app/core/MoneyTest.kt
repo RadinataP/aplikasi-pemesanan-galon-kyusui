@@ -64,4 +64,18 @@ class MoneyTest {
     fun `empty cart has no preview subtotal`() {
         assertNull(Money.previewSubtotal(emptyList()))
     }
+
+    @Test
+    fun `line total multiplies unit price by quantity`() {
+        assertEquals("16000.00", Money.lineTotal("8000.00", 2))
+        assertEquals("5000.00", Money.lineTotal("5000.00", 1))
+    }
+
+    @Test
+    fun `line total is null for unusable input`() {
+        assertNull(Money.lineTotal(null, 1))
+        assertNull(Money.lineTotal("bukan-angka", 1))
+        assertNull(Money.lineTotal("8000.00", 0))
+        assertNull(Money.lineTotal("8000.00", -1))
+    }
 }

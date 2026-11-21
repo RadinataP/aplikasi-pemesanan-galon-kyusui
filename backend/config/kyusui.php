@@ -18,8 +18,4 @@ return [
         'longitude' => (float) env('KYUSUI_SERVICE_AREA_LONGITUDE', 100.3709844),
         'radius_km' => (float) env('KYUSUI_SERVICE_AREA_RADIUS_KM', 10),
     ],
-    'delivery' => [
-        // Keputusan bisnis: Rp1.000 per galon. Jarak hanya untuk validasi area.
-        'fee_per_gallon' => (int) env('KYUSUI_DELIVERY_FEE_PER_GALLON', 1000),
-    ],
 ];

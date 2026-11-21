@@ -1,8 +1,8 @@
 package com.kyusui.app.ui.customer.orders
 
-import com.kyusui.app.core.NoNetworkException
 import com.kyusui.app.core.Result
 import com.kyusui.app.core.UnauthorizedException
+import com.kyusui.app.core.NoNetworkException
 import com.kyusui.app.domain.model.Order
 import com.kyusui.app.domain.model.OrderItem
 import com.kyusui.app.domain.model.OrderStatus
@@ -22,6 +22,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -45,7 +46,8 @@ class OrderHistoryViewModelTest {
 
     @Test
     fun `history is loading before the response arrives`() = runTest(dispatcher) {
-        coEvery { repository.getOrders(any(), any()) } returns Result.success(page(listOf(order(id = "1001"))))
+        coEvery { repository.getOrders(any(), any(), any()) } returns
+            Result.success(page(listOf(order(id = "1001"))))
 
         val viewModel = OrderHistoryViewModel(repository)
 
@@ -55,7 +57,7 @@ class OrderHistoryViewModelTest {
 
     @Test
     fun `orders are exposed in success state`() = runTest(dispatcher) {
-        coEvery { repository.getOrders(any(), any()) } returns
+        coEvery { repository.getOrders(any(), any(), any()) } returns
             Result.success(page(listOf(order(id = "1001"), order(id = "1002"))))
 
         val viewModel = OrderHistoryViewModel(repository)
@@ -68,7 +70,8 @@ class OrderHistoryViewModelTest {
 
     @Test
     fun `empty history becomes empty state`() = runTest(dispatcher) {
-        coEvery { repository.getOrders(any(), any()) } returns Result.success(page(emptyList()))
+        coEvery { repository.getOrders(any(), any(), any()) } returns
+            Result.success(page(emptyList()))
 
         val viewModel = OrderHistoryViewModel(repository)
         advanceUntilIdle()
@@ -83,7 +86,7 @@ class OrderHistoryViewModelTest {
 
     @Test
     fun `network failure becomes a retryable error`() = runTest(dispatcher) {
-        coEvery { repository.getOrders(any(), any()) } returns
+        coEvery { repository.getOrders(any(), any(), any()) } returns
             Result.failure(NoNetworkException())
 
         val viewModel = OrderHistoryViewModel(repository)
@@ -96,7 +99,7 @@ class OrderHistoryViewModelTest {
 
     @Test
     fun `unauthorized history is flagged as unauthorized`() = runTest(dispatcher) {
-        coEvery { repository.getOrders(any(), any()) } returns
+        coEvery { repository.getOrders(any(), any(), any()) } returns
             Result.failure(UnauthorizedException())
 
         val viewModel = OrderHistoryViewModel(repository)
@@ -110,96 +113,151 @@ class OrderHistoryViewModelTest {
 
     @Test
     fun `retry requests history again`() = runTest(dispatcher) {
-        coEvery { repository.getOrders(any(), any()) } returns
+        coEvery { repository.getOrders(any(), any(), any()) } returns
             Result.failure(NoNetworkException())
 
         val viewModel = OrderHistoryViewModel(repository)
         advanceUntilIdle()
 
-        coEvery { repository.getOrders(any(), any()) } returns Result.success(page(listOf(order(id = "1001"))))
+        coEvery { repository.getOrders(any(), any(), any()) } returns
+            Result.success(page(listOf(order(id = "1001"))))
         viewModel.loadOrders()
         advanceUntilIdle()
 
         assertEquals(1, viewModel.uiState.value.allOrders.size)
-        coVerify(exactly = 2) { repository.getOrders(any(), any()) }
+        coVerify(exactly = 2) { repository.getOrders(any(), any(), any()) }
     }
 
-    // --- Filtering ---
+    // --- Filter server-side ---
 
     @Test
-    fun `active filter keeps unfinished orders`() = runTest(dispatcher) {
-        coEvery { repository.getOrders(any(), any()) } returns Result.success(
-            page(
-                listOf(
-                    order(id = "1001", OrderStatus.MENUNGGU_DIPROSES),
-                    order(id = "1002", OrderStatus.SELESAI)
-                )
-            )
-        )
+    fun `history is loaded without an order status filter by default`() = runTest(dispatcher) {
+        coEvery { repository.getOrders(any(), any(), any()) } returns
+            Result.success(page(listOf(order(id = "1001"))))
+
+        val viewModel = OrderHistoryViewModel(repository)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) {
+            repository.getOrders(1, OrderHistoryViewModel.PER_PAGE, emptyList())
+        }
+    }
+
+    @Test
+    fun `the active tab reloads with every status except selesai`() = runTest(dispatcher) {
+        coEvery { repository.getOrders(any(), any(), any()) } returns
+            Result.success(page(listOf(order(id = "1001"))))
 
         val viewModel = OrderHistoryViewModel(repository)
         advanceUntilIdle()
         viewModel.setStatusFilter(OrderStatusFilter.ACTIVE)
+        advanceUntilIdle()
 
-        val state = viewModel.uiState.value
-        assertEquals(1, state.filteredOrders.size)
-        assertEquals("1001", state.filteredOrders.first().id)
-        assertFalse(state.hasNoMatchForFilter)
+        val expected = OrderStatus.values().filter { it != OrderStatus.SELESAI }
+        coVerify(exactly = 1) {
+            repository.getOrders(1, OrderHistoryViewModel.PER_PAGE, expected)
+        }
     }
 
     @Test
-    fun `completed filter keeps finished orders`() = runTest(dispatcher) {
-        coEvery { repository.getOrders(any(), any()) } returns Result.success(
-            page(
-                listOf(
-                    order(id = "1001", OrderStatus.MENUNGGU_DIPROSES),
-                    order(id = "1002", OrderStatus.SELESAI)
-                )
-            )
-        )
+    fun `the completed tab reloads with only selesai`() = runTest(dispatcher) {
+        coEvery { repository.getOrders(any(), any(), any()) } returns
+            Result.success(page(listOf(order(id = "1002"))))
 
         val viewModel = OrderHistoryViewModel(repository)
         advanceUntilIdle()
         viewModel.setStatusFilter(OrderStatusFilter.COMPLETED)
+        advanceUntilIdle()
 
-        val state = viewModel.uiState.value
-        assertEquals(1, state.filteredOrders.size)
-        assertEquals("1002", state.filteredOrders.first().id)
+        coVerify(exactly = 1) {
+            repository.getOrders(
+                page = 1,
+                perPage = OrderHistoryViewModel.PER_PAGE,
+                statuses = listOf(OrderStatus.SELESAI)
+            )
+        }
     }
 
     @Test
-    fun `a filter with no match reports a distinct empty message`() = runTest(dispatcher) {
-        coEvery { repository.getOrders(any(), any()) } returns
-            Result.success(page(listOf(order(id = "1001", OrderStatus.SELESAI))))
+    fun `selecting the current tab again does not reload`() = runTest(dispatcher) {
+        coEvery { repository.getOrders(any(), any(), any()) } returns
+            Result.success(page(emptyList()))
+
+        val viewModel = OrderHistoryViewModel(repository)
+        advanceUntilIdle()
+        // "Semua" sudah aktif sejak awal.
+        viewModel.setStatusFilter(OrderStatusFilter.ALL)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { repository.getOrders(any(), any(), any()) }
+    }
+
+    @Test
+    fun `switching tabs replaces the list with the server response for that filter`() =
+        runTest(dispatcher) {
+            val requestedFilters = mutableListOf<List<OrderStatus>>()
+            coEvery { repository.getOrders(any(), any(), capture(requestedFilters)) } answers {
+                when (requestedFilters.last()) {
+                    emptyList<OrderStatus>() -> Result.success(
+                        page(listOf(order(id = "1001", status = OrderStatus.SELESAI)))
+                    )
+                    listOf(OrderStatus.SELESAI) -> Result.success(
+                        page(listOf(order(id = "1003", status = OrderStatus.SELESAI)))
+                    )
+                    else -> Result.success(
+                        page(
+                            listOf(
+                                order(id = "1001", status = OrderStatus.DIPROSES),
+                                order(id = "1002", status = OrderStatus.DALAM_PENGANTARAN)
+                            )
+                        )
+                    )
+                }
+            }
+
+            val viewModel = OrderHistoryViewModel(repository)
+            advanceUntilIdle()
+            assertEquals(listOf("1001"), viewModel.uiState.value.filteredOrders.map { it.id })
+
+            viewModel.setStatusFilter(OrderStatusFilter.ACTIVE)
+            advanceUntilIdle()
+            assertEquals(
+                listOf("1001", "1002"),
+                viewModel.uiState.value.filteredOrders.map { it.id }
+            )
+
+            viewModel.setStatusFilter(OrderStatusFilter.COMPLETED)
+            advanceUntilIdle()
+            assertEquals(listOf("1003"), viewModel.uiState.value.filteredOrders.map { it.id })
+        }
+
+    @Test
+    fun `an empty filter result uses the filter specific message`() = runTest(dispatcher) {
+        val requestedFilters = mutableListOf<List<OrderStatus>>()
+        coEvery { repository.getOrders(any(), any(), capture(requestedFilters)) } answers {
+            if (requestedFilters.last().isEmpty()) {
+                Result.success(page(listOf(order(id = "1001", status = OrderStatus.SELESAI))))
+            } else {
+                Result.success(page(emptyList()))
+            }
+        }
 
         val viewModel = OrderHistoryViewModel(repository)
         advanceUntilIdle()
         viewModel.setStatusFilter(OrderStatusFilter.ACTIVE)
+        advanceUntilIdle()
 
-        val state = viewModel.uiState.value
-        assertTrue(state.hasNoMatchForFilter)
         assertEquals(
             "Tidak ada order yang sedang aktif.",
-            state.emptyMessage
+            viewModel.uiState.value.emptyMessage
         )
     }
 
-    @Test
-    fun `order with unknown status stays in the active list`() = runTest(dispatcher) {
-        coEvery { repository.getOrders(any(), any()) } returns Result.success(
-            page(listOf(order(id = "1001", null)))
-        )
-
-        val viewModel = OrderHistoryViewModel(repository)
-        advanceUntilIdle()
-        viewModel.setStatusFilter(OrderStatusFilter.ACTIVE)
-
-        assertEquals(1, viewModel.uiState.value.filteredOrders.size)
-    }
+    // --- Pagination ---
 
     @Test
     fun `first page reports more pages when total exceeds per page`() = runTest(dispatcher) {
-        coEvery { repository.getOrders(1, any()) } returns Result.success(
+        coEvery { repository.getOrders(1, any(), any()) } returns Result.success(
             PaginatedResult(
                 data = listOf(order(id = "1001")),
                 currentPage = 1,
@@ -220,7 +278,7 @@ class OrderHistoryViewModelTest {
         runTest(dispatcher) {
             // total = per_page + 1: halaman 1 masih punya halaman lanjutan,
             // dan halaman 2 adalah halaman terakhir.
-            coEvery { repository.getOrders(1, any()) } returns Result.success(
+            coEvery { repository.getOrders(1, any(), any()) } returns Result.success(
                 PaginatedResult(
                     data = listOf(order(id = "1001")),
                     currentPage = 1,
@@ -228,7 +286,7 @@ class OrderHistoryViewModelTest {
                     total = OrderHistoryViewModel.PER_PAGE + 1
                 )
             )
-            coEvery { repository.getOrders(2, any()) } returns Result.success(
+            coEvery { repository.getOrders(2, any(), any()) } returns Result.success(
                 PaginatedResult(
                     // "1001" sudah tampil di halaman 1, jadi tidak boleh terappend lagi.
                     data = listOf(order(id = "1001"), order(id = "1002")),
@@ -247,12 +305,37 @@ class OrderHistoryViewModelTest {
             assertEquals(2, state.page)
             assertEquals(listOf("1001", "1002"), state.allOrders.map { it.id })
             assertFalse(state.isAppending)
-            assertFalse(state.hasMore)
         }
 
     @Test
-    fun `failed append keeps loaded orders and stops further requests`() = runTest(dispatcher) {
-        coEvery { repository.getOrders(1, any()) } returns Result.success(
+    fun `failed append keeps the first page and reports a retryable message`() =
+        runTest(dispatcher) {
+            coEvery { repository.getOrders(1, any(), any()) } returns Result.success(
+                PaginatedResult(
+                    data = listOf(order(id = "1001")),
+                    currentPage = 1,
+                    perPage = OrderHistoryViewModel.PER_PAGE,
+                    total = OrderHistoryViewModel.PER_PAGE + 1
+                )
+            )
+            coEvery { repository.getOrders(2, any(), any()) } returns
+                Result.failure(NoNetworkException())
+
+            val viewModel = OrderHistoryViewModel(repository)
+            advanceUntilIdle()
+            viewModel.loadNextPage()
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value
+            assertEquals(1, state.allOrders.size)
+            assertTrue(state.ordersState is LoadState.Success)
+            assertNotNull(state.appendErrorMessage)
+            assertFalse(state.isAppending)
+        }
+
+    @Test
+    fun `retry after a failed append loads the next page`() = runTest(dispatcher) {
+        coEvery { repository.getOrders(1, any(), any()) } returns Result.success(
             PaginatedResult(
                 data = listOf(order(id = "1001")),
                 currentPage = 1,
@@ -260,51 +343,46 @@ class OrderHistoryViewModelTest {
                 total = OrderHistoryViewModel.PER_PAGE + 1
             )
         )
-        coEvery { repository.getOrders(2, any()) } returns
+        coEvery { repository.getOrders(2, any(), any()) } returns
             Result.failure(NoNetworkException())
 
         val viewModel = OrderHistoryViewModel(repository)
         advanceUntilIdle()
         viewModel.loadNextPage()
         advanceUntilIdle()
+        assertNotNull(viewModel.uiState.value.appendErrorMessage)
+
+        coEvery { repository.getOrders(2, any(), any()) } returns Result.success(
+            PaginatedResult(
+                data = listOf(order(id = "1002")),
+                currentPage = 2,
+                perPage = OrderHistoryViewModel.PER_PAGE,
+                total = OrderHistoryViewModel.PER_PAGE + 1
+            )
+        )
+
+        viewModel.loadNextPage()
+        advanceUntilIdle()
 
         val state = viewModel.uiState.value
-        assertEquals(1, state.allOrders.size)
-        assertTrue(state.ordersState is LoadState.Success)
-        assertFalse(state.hasMore)
+        assertEquals(2, state.page)
+        assertEquals(listOf("1001", "1002"), state.allOrders.map { it.id })
         assertFalse(state.isAppending)
     }
 
     @Test
-    fun `load next page is ignored when no further page exists`() = runTest(dispatcher) {
-        coEvery { repository.getOrders(any(), any()) } returns
-            Result.success(page(listOf(order(id = "1001"))))
-
-        val viewModel = OrderHistoryViewModel(repository)
-        advanceUntilIdle()
-        viewModel.loadNextPage()
-        advanceUntilIdle()
-
-        coVerify(exactly = 1) {
-            repository.getOrders(1, OrderHistoryViewModel.PER_PAGE)
-        }
-    }
-
-    @Test
-    fun `status filter survives appending another page`() = runTest(dispatcher) {
-        coEvery { repository.getOrders(1, any()) } returns Result.success(
+    fun `next page keeps the filter that is currently selected`() = runTest(dispatcher) {
+        coEvery { repository.getOrders(1, any(), any()) } returns Result.success(
             PaginatedResult(
-                data = listOf(order(id = "1001", status = OrderStatus.SELESAI)),
+                data = listOf(order(id = "1001", status = OrderStatus.DIPROSES)),
                 currentPage = 1,
                 perPage = OrderHistoryViewModel.PER_PAGE,
                 total = OrderHistoryViewModel.PER_PAGE + 1
             )
         )
-        coEvery { repository.getOrders(2, any()) } returns Result.success(
+        coEvery { repository.getOrders(2, any(), any()) } returns Result.success(
             PaginatedResult(
-                data = listOf(
-                    order(id = "1002", status = OrderStatus.DIPROSES)
-                ),
+                data = listOf(order(id = "1002", status = OrderStatus.DIPROSES)),
                 currentPage = 2,
                 perPage = OrderHistoryViewModel.PER_PAGE,
                 total = OrderHistoryViewModel.PER_PAGE + 1
@@ -313,13 +391,19 @@ class OrderHistoryViewModelTest {
 
         val viewModel = OrderHistoryViewModel(repository)
         advanceUntilIdle()
-        viewModel.setStatusFilter(OrderStatusFilter.COMPLETED)
+        viewModel.setStatusFilter(OrderStatusFilter.ACTIVE)
+        advanceUntilIdle()
         viewModel.loadNextPage()
         advanceUntilIdle()
 
-        val state = viewModel.uiState.value
-        assertEquals(OrderStatusFilter.COMPLETED, state.statusFilter)
-        assertEquals(listOf("1001"), state.filteredOrders.map { it.id })
+        val activeStatuses = OrderStatus.values().filter { it != OrderStatus.SELESAI }
+        coVerify(exactly = 1) {
+            repository.getOrders(
+                page = 2,
+                perPage = OrderHistoryViewModel.PER_PAGE,
+                statuses = activeStatuses
+            )
+        }
     }
 
     private fun page(orders: List<Order>) = PaginatedResult(

@@ -8,6 +8,7 @@ import com.kyusui.app.data.api.CustomerApi
 import com.kyusui.app.data.api.DeliveryLocationDto
 import com.kyusui.app.data.api.EnvelopeDto
 import com.kyusui.app.data.api.SelectPaymentMethodRequestDto
+import com.kyusui.app.data.api.UpdateCustomerProfileRequestDto
 import com.kyusui.app.data.mapper.requirePayment
 import com.kyusui.app.data.mapper.toDomain
 import com.kyusui.app.data.upload.ProofFileSource
@@ -15,6 +16,8 @@ import com.kyusui.app.domain.model.ActiveQris
 import com.kyusui.app.domain.model.CustomerProfile
 import com.kyusui.app.domain.model.DeliveryLocation
 import com.kyusui.app.domain.model.Order
+import com.kyusui.app.domain.model.OrderStatus
+import com.kyusui.app.domain.model.OrderTrackingResult
 import com.kyusui.app.domain.model.PaginatedResult
 import com.kyusui.app.domain.model.Payment
 import com.kyusui.app.domain.model.PaymentMethod
@@ -35,6 +38,22 @@ class CustomerRepositoryImpl @Inject constructor(
 
     override suspend fun getProfile(): Result<CustomerProfile> = safeApiCall {
         customerApi.profile().requireData().toDomain()
+    }
+
+    override suspend fun updateProfile(
+        name: String,
+        phone: String?,
+        email: String?,
+        defaultAddress: String?
+    ): Result<CustomerProfile> = safeApiCall {
+        customerApi.updateProfile(
+            UpdateCustomerProfileRequestDto(
+                name = name.trim(),
+                phone = phone?.trim()?.takeIf { it.isNotEmpty() },
+                email = email?.trim()?.takeIf { it.isNotEmpty() },
+                default_address = defaultAddress?.trim()?.takeIf { it.isNotEmpty() }
+            )
+        ).requireData().toDomain()
     }
 
     override suspend fun getProducts(
@@ -77,13 +96,58 @@ class CustomerRepositoryImpl @Inject constructor(
 
     override suspend fun getOrders(
         page: Int,
-        perPage: Int
+        perPage: Int,
+        statuses: List<OrderStatus>
     ): Result<PaginatedResult<Order>> = safeApiCall {
-        customerApi.orders(page = page, perPage = perPage).toDomain { it.toDomain() }
+        // Backend memvalidasi setiap nilai; nilai tak dikenal akan ditolak 422
+        // alih-alih diabaikan diam-diam.
+        customerApi.orders(
+            page = page,
+            perPage = perPage,
+            orderStatus = statuses
+                .joinToString(",") { it.apiValue }
+                .ifEmpty { null }
+        ).toDomain { it.toDomain() }
     }
 
     override suspend fun getOrder(orderId: String): Result<Order> = safeApiCall {
         customerApi.order(orderId).requireData().toDomain()
+    }
+
+    override suspend fun cancelOrder(orderId: String): Result<Order> = safeApiCall {
+        val response = customerApi.cancelOrder(orderId)
+        if (!response.isSuccessful) {
+            // `409` (status bukan lagi MENUNGGU_PEMBAYARAN) dan `403`/`404`
+            // dipetakan ke exception domain oleh safeApiCall, sehingga UI bisa
+            // menjelaskan alasan kegagalan.
+            throw HttpException(response)
+        }
+
+        response.body()?.requireData()?.toDomain()
+            ?: throw IllegalStateException("Respons backend tidak memuat order yang dibatalkan.")
+    }
+
+    // --- Tracking (Phase 7) ---
+
+    /**
+     * `data: null` diterjemahkan menjadi [OrderTrackingResult.NoActiveDelivery].
+     *
+     * Ini penting karena `requireData()` di file ini melempar
+     * `IllegalStateException` untuk `data` yang null, dan `safeApiCall`
+     * meratakan `IllegalStateException` menjadi `UnknownException`. Kalau
+     * tracking memakai `requireData()`, keadaan "tracking sudah selesai" akan
+     * muncul sebagai error server dan tidak bisa dibedakan dari kegagalan
+     * jaringan. Di sini `data` diperiksa eksplisit, jadi tidak ada exception
+     * yang dilempar untuk keadaan normal itu.
+     *
+     * Penolakan akses milik order lain tetap muncul sebagai error karena
+     * backend menjawab `403`, dan itu memang kegagalan yang harus
+     * ditampilkan.
+     */
+    override suspend fun getTracking(orderId: String): Result<OrderTrackingResult> = safeApiCall {
+        val data = customerApi.tracking(orderId).data
+            ?: return@safeApiCall OrderTrackingResult.NoActiveDelivery
+        OrderTrackingResult.Active(data.toDomain())
     }
 
     // --- Section 11.1 ---

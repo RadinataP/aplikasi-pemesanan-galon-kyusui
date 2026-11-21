@@ -6,8 +6,8 @@ import com.kyusui.app.core.Result
 import com.kyusui.app.domain.model.Order
 import com.kyusui.app.domain.model.OrderStatus
 import com.kyusui.app.domain.repository.CustomerRepository
-import com.kyusui.app.ui.customer.toLoadError
-import com.kyusui.app.ui.customer.toPagedListLoadState
+import com.kyusui.app.ui.state.toLoadError
+import com.kyusui.app.ui.state.toPagedListLoadState
 import com.kyusui.app.ui.state.LoadState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,8 +20,12 @@ import javax.inject.Inject
 /**
  * Riwayat order customer dari `GET /customer/orders`.
  *
- * Specification tidak menyediakan filter status pada endpoint ini, jadi
- * filtering dilakukan pada data yang sudah dimuat, bukan sebagai query.
+ * Backend menerima `order_status` berupa satu nilai pasti, beberapa nilai
+ * dipisah koma, maupun array. Android memilih tab dan mengirim gabungan status
+ * yang tepat, sehingga "Aktif" (semua status selain `SELESAI`) benar-benar
+ * disaring server-side. Sebelumnya grouping dilakukan pada data yang sudah
+ * dimuat; cara itu salah karena halaman pertama bisa saja berisi order
+ * `SELESAI` saja sehingga tab "Aktif" tampak kosong.
  */
 data class OrderHistoryUiState(
     val ordersState: LoadState<List<Order>> = LoadState.Loading,
@@ -29,28 +33,31 @@ data class OrderHistoryUiState(
     val allOrders: List<Order> = emptyList(),
     val page: Int = FIRST_PAGE,
     val hasMore: Boolean = false,
-    val isAppending: Boolean = false
+    val isAppending: Boolean = false,
+    /**
+     * Kegagalan saat memuat halaman berikutnya. Order yang sudah tampil tidak
+     * dihapus; customer hanya diberi tahu dan bisa mencoba lagi.
+     */
+    val appendErrorMessage: String? = null
 ) {
     val isUnauthorized: Boolean
         get() = (ordersState as? LoadState.Error)?.isUnauthorized == true
 
+    /**
+     * Order yang sudah disaring server untuk [statusFilter]. Tidak ada
+     * penyaringan ulang di sisi aplikasi, karena hasil server adalah
+     * kebenarannya.
+     */
     val filteredOrders: List<Order>
-        get() = when (statusFilter) {
-            OrderStatusFilter.ALL -> allOrders
-            OrderStatusFilter.ACTIVE -> allOrders.filter { it.isActive() }
-            OrderStatusFilter.COMPLETED -> allOrders.filterNot { it.isActive() }
-        }
+        get() = allOrders
 
     /**
-     * Filter yang tidak menghasilkan hasil harus tetap bisa dibedakan dari
-     * "belum ada order sama sekali", supaya pesan yang ditampilkan jujur.
+     * Pesan kosong memakai filter yang sedang aktif supaya customer tahu bahwa
+     * tidak ada order pada tab itu, bukan tidak ada order sama sekali.
      */
-    val hasNoMatchForFilter: Boolean
-        get() = allOrders.isNotEmpty() && filteredOrders.isEmpty()
-
     val emptyMessage: String
         get() = when {
-            allOrders.isEmpty() -> OrderHistoryViewModel.EMPTY_ORDERS_MESSAGE
+            allOrders.isNotEmpty() -> OrderHistoryViewModel.EMPTY_ORDERS_MESSAGE
             statusFilter == OrderStatusFilter.ACTIVE -> EMPTY_ACTIVE_ORDERS_MESSAGE
             statusFilter == OrderStatusFilter.COMPLETED -> EMPTY_COMPLETED_ORDERS_MESSAGE
             else -> OrderHistoryViewModel.EMPTY_ORDERS_MESSAGE
@@ -74,14 +81,20 @@ enum class OrderStatusFilter {
         ACTIVE -> "Aktif"
         COMPLETED -> "Selesai"
     }
-}
 
-/**
- * Status yang masih berjalan. `SELESAI` adalah status terminal satu-satunya,
- * jadi status yang tidak dikenal dianggap aktif supaya customer tidak
- * kehilangan order yang belum selesai.
- */
-private fun Order.isActive(): Boolean = orderStatus != OrderStatus.SELESAI
+    /**
+     * Status pasti yang dikirim ke backend.
+     *
+     * `SELESAI` adalah satu-satunya status terminal, jadi "Aktif" adalah semua
+     * status lain — termasuk status yang belum dikenal sekalipun tetap
+     * diekspresikan lewat daftar status yang dikenal, bukan dengan menebak.
+     */
+    fun statuses(): List<OrderStatus> = when (this) {
+        ALL -> emptyList()
+        ACTIVE -> OrderStatus.values().filter { it != OrderStatus.SELESAI }
+        COMPLETED -> listOf(OrderStatus.SELESAI)
+    }
+}
 
 @HiltViewModel
 class OrderHistoryViewModel @Inject constructor(
@@ -96,20 +109,24 @@ class OrderHistoryViewModel @Inject constructor(
     }
 
     fun loadOrders() {
+        val statuses = _uiState.value.statusFilter.statuses()
+
         _uiState.update {
             it.copy(
                 ordersState = LoadState.Loading,
                 allOrders = emptyList(),
                 page = OrderHistoryUiState.FIRST_PAGE,
                 hasMore = false,
-                isAppending = false
+                isAppending = false,
+                appendErrorMessage = null
             )
         }
 
         viewModelScope.launch {
             val result = customerRepository.getOrders(
                 page = OrderHistoryUiState.FIRST_PAGE,
-                perPage = PER_PAGE
+                perPage = PER_PAGE,
+                statuses = statuses
             )
 
             _uiState.update { state ->
@@ -128,9 +145,10 @@ class OrderHistoryViewModel @Inject constructor(
     /**
      * Memuat halaman order berikutnya.
      *
-     * Halaman yang gagal tidak menghapus order yang sudah tampil; `hasMore`
-     * dimatikan supaya tidak mengulang request yang sama saat customer
-     * menggulir ulang.
+     * Halaman yang gagal tidak menghapus order yang sudah tampil. `hasMore`
+     * tetap aktif dan kegagalannya disimpan di `appendErrorMessage` supaya
+     * customer bisa mencoba lagi secara eksplisit (bukan retry otomatis saat
+     * menggulir).
      */
     fun loadNextPage() {
         val current = _uiState.value
@@ -138,10 +156,14 @@ class OrderHistoryViewModel @Inject constructor(
         if (current.ordersState !is LoadState.Success) return
 
         val nextPage = current.page + 1
-        _uiState.update { it.copy(isAppending = true) }
+        _uiState.update { it.copy(isAppending = true, appendErrorMessage = null) }
 
         viewModelScope.launch {
-            val result = customerRepository.getOrders(page = nextPage, perPage = PER_PAGE)
+            val result = customerRepository.getOrders(
+                page = nextPage,
+                perPage = PER_PAGE,
+                statuses = current.statusFilter.statuses()
+            )
 
             _uiState.update { state ->
                 when (result) {
@@ -152,22 +174,28 @@ class OrderHistoryViewModel @Inject constructor(
                             ordersState = LoadState.Success(merged),
                             page = nextPage,
                             hasMore = result.data.hasMore,
-                            isAppending = false
+                            isAppending = false,
+                            appendErrorMessage = null
                         )
                     }
                     is Result.Failure -> state.copy(
-                        hasMore = false,
-                        isAppending = false
+                        isAppending = false,
+                        appendErrorMessage = result.toLoadError().message
                     )
                 }
             }
         }
     }
 
+    /**
+     * Mengganti tab filter. Karena penyaringan dilakukan server-side, tab yang
+     * berbeda benar-benar memuat ulang dari halaman pertama; kalau tidak,
+     * "Aktif" hanya akan menyaring halaman yang kebetulan sudah dimuat.
+     */
     fun setStatusFilter(filter: OrderStatusFilter) {
-        // Filter sengaja dipertahankan saat halaman berikutnya dimuat supaya
-        // pilihan customer tidak ter-reset karena infinite scroll.
+        if (_uiState.value.statusFilter == filter) return
         _uiState.update { it.copy(statusFilter = filter) }
+        loadOrders()
     }
 
     companion object {

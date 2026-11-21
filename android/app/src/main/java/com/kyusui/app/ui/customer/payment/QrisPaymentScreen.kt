@@ -84,6 +84,7 @@ fun QrisPaymentScreen(
 
     Scaffold(
         modifier = modifier,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text(text = "Pembayaran QRIS") },

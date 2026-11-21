@@ -49,7 +49,6 @@ class DirectOrderController extends Controller
                 ->orderBy('id')->lockForUpdate()->get()->keyBy('id');
 
             $subtotal = '0.00';
-            $totalQuantity = 0;
             $items = [];
             foreach ($data['items'] as $line) {
                 $product = $products->get((int) $line['product_id']);
@@ -57,7 +56,6 @@ class DirectOrderController extends Controller
                 $quantity = (int) $line['quantity'];
                 $lineTotal = bcmul((string) $product->price, (string) $quantity, 2);
                 $subtotal = bcadd($subtotal, $lineTotal, 2);
-                $totalQuantity += $quantity;
                 $items[] = [
                     'product_id' => $product->id,
                     'product_name' => $product->name,
@@ -68,10 +66,9 @@ class DirectOrderController extends Controller
             }
 
             $fulfillment = $data['fulfillment_type'];
-            $deliveryFee = $fulfillment === 'DELIVERY'
-                ? ((int) config('kyusui.delivery.fee_per_gallon', 1000) * $totalQuantity)
-                : 0;
-            $total = bcadd($subtotal, number_format($deliveryFee, 2, '.', ''), 2);
+            // Tidak ada biaya antar untuk pesanan langsung maupun pesanan aplikasi.
+            $deliveryFee = 0;
+            $total = $subtotal;
             $location = $data['delivery_location'] ?? [];
 
             // Courier-created delivery is assigned to the acting courier; owner-created

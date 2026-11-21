@@ -3,11 +3,13 @@ package com.kyusui.app.ui.customer.createorder
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kyusui.app.core.Result
+import com.kyusui.app.core.DeliveryLocationValidation
+import com.kyusui.app.core.DeliveryLocationValidator
 import com.kyusui.app.domain.model.DeliveryLocation
 import com.kyusui.app.domain.model.Order
 import com.kyusui.app.domain.repository.CustomerRepository
 import com.kyusui.app.domain.repository.OrderItemRequest
-import com.kyusui.app.ui.customer.toSubmitError
+import com.kyusui.app.ui.state.toSubmitError
 import com.kyusui.app.ui.state.SubmitState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -102,6 +104,10 @@ class CreateOrderViewModel @Inject constructor(
 internal object DeliveryLocationFactory {
     fun create(state: CartUiState): DeliveryLocation {
         val point = requireNotNull(state.location) { "Lokasi belum tersedia." }
+        when (val validation = DeliveryLocationValidator.validate(state.address, point)) {
+            is DeliveryLocationValidation.Valid -> Unit
+            is DeliveryLocationValidation.Invalid -> error(validation.message)
+        }
         return DeliveryLocation(
             address = state.address.trim(),
             point = point

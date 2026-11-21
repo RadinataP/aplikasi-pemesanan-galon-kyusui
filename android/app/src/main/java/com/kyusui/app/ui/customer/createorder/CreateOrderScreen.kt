@@ -32,6 +32,8 @@ import com.kyusui.app.ui.components.InputField
 import com.kyusui.app.ui.components.InlineError
 import com.kyusui.app.ui.components.PrimaryButton
 import com.kyusui.app.ui.state.SubmitState
+import com.kyusui.app.domain.model.GeoPoint
+import com.kyusui.app.ui.maps.CustomerLocationPickerMap
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,12 +43,13 @@ fun CreateOrderScreen(
     onBack: () -> Unit,
     onAddressChange: (String) -> Unit,
     onRequestLocation: () -> Unit,
+    onConfirmMapLocation: (GeoPoint) -> Unit,
     onContinueToSummary: () -> Unit,
-    onSubmit: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Scaffold(
         modifier = modifier,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text(text = "Buat Pesanan") },
@@ -81,8 +84,14 @@ fun CreateOrderScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                text = "Rincian Pesanan",
-                style = MaterialTheme.typography.titleMedium
+                text = "Periksa pesananmu",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+            )
+            Text(
+                text = "Pastikan jumlah produk dan lokasi pengantaran sudah benar.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             cartState.lines.forEach { line ->
@@ -104,15 +113,16 @@ fun CreateOrderScreen(
                             modifier = Modifier.weight(1f)
                         )
                         Text(
-                            text = Money.format(line.product.price),
+                            text = Money.format(
+                                Money.lineTotal(line.product.price, line.quantity)
+                            ),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
                 }
             }
 
-            // Estimasi lokal. Backend menghitung ulang subtotal, delivery fee,
-            // dan total final saat order dibuat.
+            // Estimasi lokal. Server tetap memvalidasi harga produk saat order dibuat.
             cartState.previewSubtotal?.let { subtotal ->
                 Text(
                     text = "Estimasi subtotal: ${Money.format(subtotal)}",
@@ -120,7 +130,7 @@ fun CreateOrderScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = "Total akhir dihitung oleh server.",
+                    text = "Tidak ada biaya antar. Total produk divalidasi kembali oleh server.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -128,8 +138,19 @@ fun CreateOrderScreen(
 
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Lokasi Pengantaran",
-                style = MaterialTheme.typography.titleMedium
+                text = "Alamat pengantaran",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+            )
+            Text(
+                text = "Pilih titik rumah atau tujuan pengantaran pada peta, lalu tulis alamat lengkapnya.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            CustomerLocationPickerMap(
+                selectedPoint = cartState.location,
+                onConfirmLocation = onConfirmMapLocation,
+                mapHeight = 280
             )
 
             InputField(
@@ -182,13 +203,13 @@ fun CreateOrderScreen(
             // Tombol tetap mati sampai alamat dan lokasi valid supaya order
             // tidak pernah terkirim dengan data pengantaran yang kosong.
             PrimaryButton(
-                text = "Lanjut ke Ringkasan",
+                text = "Lanjut ke konfirmasi",
                 onClick = onContinueToSummary,
                 enabled = cartState.canSubmit
             )
 
             Text(
-                text = "Dengan membuat pesanan, Anda menyetujui pesanan diproses oleh KYUSUI.",
+                text = "Dengan membuat pesanan, Anda menyetujui pesanan diproses oleh Berkah Water.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,

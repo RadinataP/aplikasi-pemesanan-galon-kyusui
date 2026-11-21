@@ -39,7 +39,7 @@ class OwnerControllerTest extends TestCase
         );
     }
 
-    public function test_reject_resets_qris_proof_metadata_and_removes_file(): void
+    public function test_reject_resets_active_qris_proof_metadata_and_retains_historical_file(): void
     {
         [$ownerUser] = $this->owner();
         $order = $this->order(OrderStatus::MENUNGGU_PEMBAYARAN);
@@ -61,7 +61,15 @@ class OwnerControllerTest extends TestCase
             'verified_by' => null,
             'verified_at' => null,
         ]);
-        Storage::disk('local')->assertMissing($payment->proof_image);
+        // File tetap disimpan karena riwayat bukti penolakan mengacu ke file ini.
+        Storage::disk('local')->assertExists($payment->proof_image);
+        $this->assertDatabaseHas('payment_proof_histories', [
+            'payment_id' => $payment->id,
+            'proof_image' => $payment->proof_image,
+            'decision' => 'REJECTED',
+            'note' => 'Bukti tidak terbaca.',
+            'actor_user_id' => $ownerUser->id,
+        ]);
         $this->assertDatabaseHas('payment_status_histories', [
             'payment_id' => $payment->id,
             'from_status' => 'WAITING_VERIFICATION',

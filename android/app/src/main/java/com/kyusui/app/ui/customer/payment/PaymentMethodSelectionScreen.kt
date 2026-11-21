@@ -81,6 +81,7 @@ fun PaymentMethodSelectionScreen(
 
     Scaffold(
         modifier = modifier,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text(text = "Metode Pembayaran") },
