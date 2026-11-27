@@ -25,3 +25,13 @@
 # Sistem operasi
 .DS_Store
 Thumbs.db
+# Local configuration and release credentials
+/android/local.properties
+/android/key.properties
+*.jks
+*.keystore
+*.apk
+*.aab
+/backend/.env
+/backend/.env.*
+!/backend/.env.example
