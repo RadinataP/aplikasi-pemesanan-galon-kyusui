@@ -17,6 +17,7 @@ import com.kyusui.app.domain.model.OrderStatus
 import com.kyusui.app.domain.model.PaymentMethod
 import com.kyusui.app.domain.model.PaymentStatus
 import com.kyusui.app.domain.repository.CourierRepository
+import com.kyusui.app.domain.model.CourierDutyState
 import com.kyusui.app.ui.courier.tracking.FakeCourierLocationSharing
 import com.kyusui.app.ui.courier.tracking.TrackingStopReason
 import com.kyusui.app.ui.state.LoadState
@@ -70,6 +71,8 @@ class DeliveryDetailViewModelTest {
     fun setup() {
         Dispatchers.setMain(dispatcher)
         repository = mockk(relaxed = true)
+        coEvery { repository.getActiveAssignmentIds() } returns Result.success(emptyList())
+        coEvery { repository.getDutyState() } returns Result.success(CourierDutyState())
         sharing = FakeCourierLocationSharing()
     }
 
@@ -290,6 +293,38 @@ class DeliveryDetailViewModelTest {
                 listOf(TrackingStopReason.DELIVERY_NOT_ACTIVE),
                 sharing.stoppedReasons
             )
+            assertTrue(sharing.started.isNotEmpty())
+        }
+
+    @Test
+    fun `completing one delivery keeps location sharing for another delivery`() =
+        runTest(dispatcher) {
+            coEvery { repository.getAssignment("7") } returns Result.Success(
+                delivery(
+                    status = AssignmentStatus.ACTIVE,
+                    orderStatus = OrderStatus.DALAM_PENGANTARAN,
+                    paymentStatus = PaymentStatus.PAID
+                )
+            )
+            coEvery { repository.completeDelivery("7") } returns Result.Success(
+                delivery(
+                    status = AssignmentStatus.COMPLETED,
+                    orderStatus = OrderStatus.SELESAI,
+                    paymentStatus = PaymentStatus.PAID,
+                    completedAt = "2026-01-01T11:00:00.000000Z"
+                )
+            )
+            coEvery { repository.getActiveAssignmentIds() } returns Result.success(listOf("8"))
+            // Kurir sedang mengirim posisi untuk assignment ini.
+            sharing.start("7")
+
+            val viewModel = createViewModel("7")
+            advanceUntilIdle()
+            viewModel.completeDelivery()
+            advanceUntilIdle()
+
+            assertTrue(sharing.stoppedReasons.isEmpty())
+            assertTrue(sharing.state.value.isSharing)
             assertTrue(sharing.started.isNotEmpty())
         }
 
