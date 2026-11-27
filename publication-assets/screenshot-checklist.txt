@@ -1,0 +1,10 @@
+Ambil screenshot asli dari APK release yang sudah diuji, menggunakan akun dan data dummy (jangan tampilkan alamat pelanggan, bukti pembayaran nyata, nomor telepon, token, atau koordinat nyata).
+1. Login / onboarding
+2. Dashboard customer
+3. Katalog galon
+4. Ringkasan pesanan
+5. Pilihan pembayaran QRIS / tunai (gunakan QR dummy yang tidak menerima dana)
+6. Status dan pelacakan pengantaran dengan data dummy
+7. Riwayat pesanan
+8. Pengaturan dengan tautan privasi dan bantuan
+Gunakan screenshot potret tanpa status bar yang berisi informasi pribadi. Sesuaikan format, jumlah dan dimensi dengan persyaratan console APKPure. Tidak ada screenshot palsu atau mockup yang diklaim sebagai aplikasi asli.
