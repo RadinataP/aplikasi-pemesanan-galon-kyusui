@@ -9,6 +9,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import com.kyusui.app.BuildConfig
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Info
@@ -42,6 +45,7 @@ fun SettingsScreen(
     onOpenAbout: () -> Unit,
     onLogout: () -> Unit
 ) {
+    val openPublicLink = rememberPublicLinkOpener()
     Scaffold(
         containerColor = CourierColors.Background,
         topBar = {
@@ -59,7 +63,7 @@ fun SettingsScreen(
         }
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp),
+            modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             CourierPageHeader(
@@ -110,7 +114,7 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        "Versi aplikasi dan konfigurasi server mengikuti build yang dipasang.",
+                        "Versi ${BuildConfig.VERSION_NAME}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -121,7 +125,16 @@ fun SettingsScreen(
                 onClick = onOpenAbout,
                 modifier = Modifier.fillMaxWidth()
             )
-            Spacer(Modifier.weight(1f))
+            listOf(
+                "Panduan penggunaan" to "manual-book",
+                "Kebijakan privasi" to "privacy-policy",
+                "Syarat dan ketentuan" to "terms-and-conditions",
+                "Bantuan dan dukungan" to "support",
+                "Ajukan penghapusan akun" to "delete-account"
+            ).forEach { (label, path) ->
+                OutlinedButton(text = label, onClick = { openPublicLink(path) }, modifier = Modifier.fillMaxWidth())
+            }
+            Spacer(Modifier.size(4.dp))
             PrimaryButton(
                 text = "Keluar dari akun",
                 onClick = onLogout,

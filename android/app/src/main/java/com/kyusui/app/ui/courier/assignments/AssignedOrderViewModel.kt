@@ -31,14 +31,18 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class AssignedOrderViewModel @Inject constructor(
-    private val courierRepository: CourierRepository
+    private val courierRepository: CourierRepository,
+    private val sharing: com.kyusui.app.ui.courier.tracking.CourierLocationSharing
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AssignedOrderUiState())
     val uiState: StateFlow<AssignedOrderUiState> = _uiState.asStateFlow()
 
+    private var poolLoading = false
+
     init {
         loadAssignments()
+        loadOpenOrders()
     }
 
     /**
@@ -67,11 +71,9 @@ class AssignedOrderViewModel @Inject constructor(
 
         viewModelScope.launch {
             when (val result = courierRepository.getAssignments()) {
-                is Result.Success -> _uiState.update {
-                    it.copy(
-                        listState = result.data.toListLoadState(EMPTY_MESSAGE),
-                        isRefreshing = false
-                    )
+                is Result.Success -> {
+                    _uiState.update { it.copy(listState = result.data.toListLoadState(EMPTY_MESSAGE), isRefreshing = false) }
+                    result.data.firstOrNull { it.canPostLocation }?.let { sharing.start(it.id) }
                 }
 
                 is Result.Failure -> _uiState.update { state ->
@@ -102,6 +104,35 @@ class AssignedOrderViewModel @Inject constructor(
      * tidak boleh dipakai untuk menyimpulkan bahwa backend menolak assignment
      * milik orang lain: daftar ini sudah milik kurir tersebut saja.
      */
+    fun loadOpenOrders() {
+        if (poolLoading) return
+        poolLoading = true
+        viewModelScope.launch {
+            try {
+            when (val result = courierRepository.getOpenOrders()) {
+                is Result.Success -> _uiState.update { it.copy(openOrders = result.data, poolError = null) }
+                is Result.Failure -> _uiState.update { it.copy(poolError = result.exception.userMessage()) }
+            }
+            } finally { poolLoading = false }
+        }
+    }
+
+    fun claimOrder(orderId: String) {
+        if (_uiState.value.claimingId != null) return
+        _uiState.update { it.copy(claimingId = orderId, claimMessage = null) }
+        viewModelScope.launch {
+            when (val result = courierRepository.claimOrder(orderId)) {
+                is Result.Success -> {
+                    sharing.start(result.data.id)
+                    _uiState.update { it.copy(claimingId = null, claimMessage = "Pesanan diambil. Tracking otomatis berjalan jika GPS tersedia.", openOrders = it.openOrders.filterNot { order -> order.id == orderId }, filter = CourierAssignmentFilter.ALL) }
+                }
+                is Result.Failure -> _uiState.update { it.copy(claimingId = null, claimMessage = result.exception.userMessage()) }
+            }
+            loadOpenOrders()
+            loadAssignments(force = true)
+        }
+    }
+
     fun setFilter(filter: CourierAssignmentFilter) {
         _uiState.update { it.copy(filter = filter) }
     }
@@ -143,7 +174,11 @@ data class AssignedOrderUiState(
      * menghapus daftar yang sedang dibaca kurir. Pola ini sama dengan beranda
      * kurir, jadi kedua layar gagal dengan cara yang sama.
      */
-    val refreshErrorMessage: String? = null
+    val refreshErrorMessage: String? = null,
+    val openOrders: List<com.kyusui.app.domain.model.OpenCourierOrder> = emptyList(),
+    val poolError: String? = null,
+    val claimingId: String? = null,
+    val claimMessage: String? = null
 ) {
     val deliveries: List<CourierDelivery>
         get() = (listState as? LoadState.Success)?.data.orEmpty()

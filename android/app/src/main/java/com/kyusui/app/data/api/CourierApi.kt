@@ -57,6 +57,15 @@ import retrofit2.http.Path
  *   tidak ada objek `meta`. UI karena itu tidak boleh mengarang pagination.
  */
 interface CourierApi {
+    @GET("courier/open-orders")
+    suspend fun openOrders(): EnvelopeDto<List<OpenCourierOrderDto>>
+
+    @POST("courier/open-orders/{order}/claim")
+    suspend fun claimOrder(@Path("order") orderId: String): Response<EnvelopeDto<CourierAssignmentDto>>
+
+    @GET("courier/active-assignment-ids")
+    suspend fun activeAssignmentIds(): EnvelopeDto<List<String>>
+
 
     // Pesanan langsung Kurir. Backend menetapkan assignment bila DELIVERY.
     @POST("courier/direct-orders")
@@ -181,6 +190,17 @@ interface CourierApi {
  * sengaja tidak ada di sini: kurir yang sedang memakai aplikasi ini sudah
  * tahu identity-nya, dan backend tidak pernah mengirimnya.
  */
+@Serializable
+data class OpenCourierOrderDto(
+    @Serializable(with = TolerantIdSerializer::class) val order_id: Long,
+    val order_number: String = "",
+    val customer: CourierAssignmentCustomerDto? = null,
+    val delivery_address: String? = null,
+    val items: List<CourierAssignmentItemDto> = emptyList(),
+    val total_amount: String = "0.00",
+    val payment: CourierAssignmentPaymentDto? = null
+)
+
 @Serializable
 data class CourierAssignmentDto(
     @Serializable(with = TolerantIdSerializer::class) val id: Long,
@@ -324,7 +344,8 @@ data class CourierDashboardDto(
     val active_assignment: CourierDashboardOrderDto? = null,
     val today_assignments: List<CourierDashboardOrderDto> = emptyList(),
     val summary: CourierDashboardSummaryDto? = null,
-    val unread_notifications: Int = 0
+    val unread_notifications: Int = 0,
+    val active_assignments: List<CourierDashboardOrderDto> = emptyList()
 )
 
 @Serializable

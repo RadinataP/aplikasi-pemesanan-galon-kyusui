@@ -167,7 +167,8 @@ fun CourierDashboardDto.toDomain(): CourierDashboard = CourierDashboard(
             completionRate = it.completion_rate
         )
     } ?: CourierDashboardSummary(),
-    unreadNotifications = unread_notifications
+    unreadNotifications = unread_notifications,
+    activeDeliveries = active_assignments.map { it.toDomain() }.ifEmpty { listOfNotNull(active_assignment?.toDomain()) }
 )
 
 /**

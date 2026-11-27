@@ -11,6 +11,7 @@ import com.kyusui.app.domain.model.CourierLocationFix
 import com.kyusui.app.domain.model.PaymentStatus
 import com.kyusui.app.domain.repository.CourierRepository
 import com.kyusui.app.ui.courier.tracking.CourierLocationSharing
+import com.kyusui.app.ui.courier.tracking.reconcileCourierTracking
 import com.kyusui.app.ui.courier.tracking.TrackingStopReason
 import com.kyusui.app.ui.state.LoadState
 import com.kyusui.app.ui.state.SubmitState
@@ -90,8 +91,9 @@ class DeliveryDetailViewModel @Inject constructor(
 
         viewModelScope.launch {
             when (val result = courierRepository.getAssignment(assignmentId)) {
-                is Result.Success -> _uiState.update {
-                    it.copy(deliveryState = LoadState.Success(result.data))
+                is Result.Success -> {
+                    _uiState.update { it.copy(deliveryState = LoadState.Success(result.data)) }
+                    if (result.data.canPostLocation) sharing.start(result.data.id)
                 }
 
                 is Result.Failure -> _uiState.update {
@@ -123,7 +125,9 @@ class DeliveryDetailViewModel @Inject constructor(
 
         viewModelScope.launch {
             when (val result = courierRepository.startDelivery(assignmentId)) {
-                is Result.Success -> _uiState.update { state ->
+                is Result.Success -> {
+                    sharing.start(result.data.id)
+                    _uiState.update { state ->
                     state.copy(
                         // Status assignment apa adanya dari backend. Tidak ada
                         // cabang yang menulis `ACTIVE` secara lokal.
@@ -133,6 +137,7 @@ class DeliveryDetailViewModel @Inject constructor(
                             ?: state.lastReportedLocation,
                         actionMessage = START_SUCCESS_MESSAGE
                     )
+                }
                 }
 
                 is Result.Failure -> _uiState.update {
@@ -173,10 +178,8 @@ class DeliveryDetailViewModel @Inject constructor(
                             actionMessage = COMPLETE_SUCCESS_MESSAGE
                         )
                     }
-                    // Delivery selesai = tidak ada lagi pengiriman posisi yang sah
-                    // untuk assignment ini. Penghentian dijalankan controller:
-                    // service latar belakang harus mati bersama delivery.
-                    sharing.stop(TrackingStopReason.DELIVERY_NOT_ACTIVE)
+                    // Stop only if the server confirms no delivery and no duty remain.
+                    reconcileCourierTracking(courierRepository, sharing)
                 }
 
                 is Result.Failure -> _uiState.update {

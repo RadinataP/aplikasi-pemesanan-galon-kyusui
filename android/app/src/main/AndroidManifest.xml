@@ -14,10 +14,6 @@
     <uses-permission android:name="android.permission.VIBRATE" />
 
 
-    <!-- Firebase Configuration (placeholder) -->
-    <meta-data
-        android:name="com.google.firebase.messaging.default_notification_channel_id"
-        android:value="kyusui_default" />
 
     <application
         android:name=".KyusuiApplication"
@@ -31,6 +27,9 @@
         android:theme="@style/Theme.Kyusui"
         tools:targetApi="31"
         android:usesCleartextTraffic="false">
+
+        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="kyusui_default" />
 
         <activity
             android:name=".MainActivity"

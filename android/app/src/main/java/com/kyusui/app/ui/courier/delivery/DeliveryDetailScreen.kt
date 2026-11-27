@@ -83,7 +83,8 @@ fun DeliveryDetailScreen(
     onRetry: () -> Unit,
     onMessageShown: () -> Unit,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenQrisVerification: () -> Unit = {}
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -147,6 +148,7 @@ fun DeliveryDetailScreen(
                 onOpenCustomerLocation = onOpenCustomerLocation,
                 onOpenTracking = onOpenTracking,
                 onOpenCashConfirmation = onOpenCashConfirmation,
+                onOpenQrisVerification = onOpenQrisVerification,
                 onRetry = onRetry
             )
         }
@@ -163,7 +165,8 @@ private fun DeliveryContent(
     onOpenTracking: () -> Unit,
     onOpenCashConfirmation: () -> Unit,
     onRetry: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenQrisVerification: () -> Unit = {}
 ) {
     Column(
         modifier = modifier
@@ -211,6 +214,11 @@ private fun DeliveryContent(
             onOpenTracking = onOpenTracking,
                 onOpenCashConfirmation = onOpenCashConfirmation
         )
+
+        if (delivery.order?.payment?.paymentMethod == com.kyusui.app.domain.model.PaymentMethod.QRIS &&
+            delivery.order?.payment?.paymentStatus == com.kyusui.app.domain.model.PaymentStatus.WAITING_VERIFICATION) {
+            PrimaryButton(text = "Verifikasi QRIS", onClick = onOpenQrisVerification)
+        }
 
         OutlinedButton(
             text = "Muat Ulang",
@@ -425,7 +433,7 @@ private fun ActionSection(
             )
 
             OutlinedButton(
-                text = "Kirim Posisi",
+                text = "Status Tracking Otomatis",
                 onClick = onOpenTracking,
                 icon = Icons.Outlined.MyLocation
             )

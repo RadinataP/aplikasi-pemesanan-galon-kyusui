@@ -23,6 +23,15 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import com.kyusui.app.ui.location.rememberLocationRequestState
+import com.kyusui.app.ui.location.resolveLocationPermissionState
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -61,8 +70,20 @@ fun AssignedOrderScreen(
     onRefresh: () -> Unit,
     onOpenHome: () -> Unit = {},
     onOpenProfile: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onClaim: (String) -> Unit = {},
+    onRefreshPool: () -> Unit = {}
 ) {
+    val context = LocalContext.current
+    var pendingClaim by remember { mutableStateOf<String?>(null) }
+    var permissionError by remember { mutableStateOf(false) }
+    val permission = rememberLocationRequestState(
+        onPermissionDenied = { pendingClaim = null; permissionError = true },
+        onPermissionGranted = { pendingClaim?.let(onClaim); pendingClaim = null; permissionError = false }
+    )
+    LaunchedEffect(Unit) {
+        while (true) { onRefreshPool(); onRefresh(); delay(15000) }
+    }
     Scaffold(
         modifier = modifier,
         containerColor = CourierColors.Background,
@@ -141,63 +162,45 @@ fun AssignedOrderScreen(
                 )
             }
 
-            when (val state = uiState.listState) {
-                is LoadState.Loading -> LoadingState(
-                    modifier = Modifier.padding(innerPadding),
-                    message = "Memuat daftar pengantaran..."
-                )
-
-                is LoadState.Error -> ErrorState(
-                    message = state.message,
-                    isRetryable = state.isRetryable,
-                    onRetry = if (state.isRetryable) onRefresh else null
-                )
-
-                is LoadState.Empty -> EmptyState(
-                    title = "Belum Ada Pengantaran",
-                    message = state.message,
-                    actionText = "Muat Ulang",
-                    onActionClick = onRefresh
-                )
-
-                is LoadState.Success -> {
-                    if (uiState.filteredIsEmpty) {
-                        // Data ada, tapi filter yang dipilih tidak punya baris.
-                        // Pesannya berbeda dari `Empty` supaya kurir tahu daftar
-                        //-nya tidak kosong dan filternya yang perlu diubah.
-                        EmptyState(
-                            title = "Tidak Ada Pengantaran pada Filter Ini",
-                            message = uiState.filter.emptyMessage,
-                            actionText = "Tampilkan Semua",
-                            onActionClick = { onSelectFilter(CourierAssignmentFilter.ALL) }
-                        )
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            item(key = "refresh") {
-                                OutlinedButton(
-                                    text = "Muat Ulang",
-                                    onClick = onRefresh,
-                                    enabled = !uiState.isRefreshing,
-                                    isLoading = uiState.isRefreshing,
-                                    icon = Icons.Outlined.Refresh
-                                )
-                            }
-
-                            items(
-                                items = uiState.visibleDeliveries,
-                                key = { delivery -> delivery.id }
-                            ) { delivery ->
-                                AssignmentCard(
-                                    delivery = delivery,
-                                    onClick = { onOpenDelivery(delivery.id) }
-                                )
-                            }
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item(key = "pool_title") {
+                    Text("Pesanan baru (${uiState.openOrders.size})", style = MaterialTheme.typography.titleLarge)
+                    Text("Ambil pesanan yang siap Anda antar. Lokasi dibagikan otomatis saat diterima.")
+                    OutlinedButton(text = "Muat ulang pesanan", onClick = { onRefreshPool(); onRefresh() })
+                    if (permissionError) Text("Izinkan lokasi di pengaturan Android untuk menerima pesanan.", color = MaterialTheme.colorScheme.error)
+                    uiState.poolError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    uiState.claimMessage?.let { Text(it) }
+                    if (uiState.openOrders.isEmpty() && uiState.poolError == null) Text("Belum ada pesanan baru.")
+                }
+                items(uiState.openOrders, key = { "open-${it.id}" }) { order ->
+                    CourierCard(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(order.number, style = MaterialTheme.typography.titleMedium)
+                            Text(order.customerName.orEmpty())
+                            Text(order.address.orEmpty())
+                            Text(order.items.joinToString(" • ") { "${it.quantity} × ${it.productName}" })
+                            Text("Total: ${Money.format(order.totalAmount)}")
+                            Text("Pembayaran: ${order.payment?.paymentMethod?.displayName.orEmpty()} — ${order.payment?.paymentStatus?.displayName.orEmpty()}")
+                            OutlinedButton(text = "Ambil Pesanan", enabled = uiState.claimingId == null, isLoading = uiState.claimingId == order.id,
+                                onClick = {
+                                    if (resolveLocationPermissionState(context, hasAsked = false).allowsAcquisition) onClaim(order.id)
+                                    else { pendingClaim = order.id; permission.launcher() }
+                                })
                         }
                     }
+                }
+                item(key = "assigned_title") {
+                    Text("Pengantaran saya (${uiState.activeCount} aktif)", style = MaterialTheme.typography.titleLarge)
+                    if (uiState.isRefreshing) Text("Memuat pengantaran…")
+                    uiState.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    if (uiState.visibleDeliveries.isEmpty()) Text("Tidak ada pengantaran pada filter ini.")
+                }
+                items(uiState.visibleDeliveries, key = { "assigned-${it.id}" }) { delivery ->
+                    AssignmentCard(delivery = delivery, onClick = { onOpenDelivery(delivery.id) })
                 }
             }
         }

@@ -20,6 +20,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import com.kyusui.app.ui.settings.rememberPublicLinkOpener
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +45,7 @@ import com.kyusui.app.ui.theme.KyusuiComponentDimensions
 
 @Composable
 fun RegisterScreen(viewModel: AuthViewModel, onLoginClick: () -> Unit) {
+    val openPublicLink = rememberPublicLinkOpener()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var name by rememberSaveable { mutableStateOf("") }
     var phone by rememberSaveable { mutableStateOf("") }
@@ -199,6 +202,9 @@ fun RegisterScreen(viewModel: AuthViewModel, onLoginClick: () -> Unit) {
                         isEnabled = !isSubmitting
                     )
 
+                    Text("Baca informasi penggunaan dan pemrosesan data sebelum mendaftar.", style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = { openPublicLink("privacy-policy") }) { Text("Kebijakan privasi") }
+                    TextButton(onClick = { openPublicLink("terms-and-conditions") }) { Text("Syarat dan ketentuan") }
                     PrimaryButton(
                         text = "Daftar",
                         onClick = ::submitRegistration,

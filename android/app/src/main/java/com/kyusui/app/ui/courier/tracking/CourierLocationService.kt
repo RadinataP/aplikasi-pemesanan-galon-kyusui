@@ -60,6 +60,7 @@ class AndroidCourierLocationServiceLauncher(
         startService(assignmentId = "", isDuty = true)
 
     private fun startService(assignmentId: String, isDuty: Boolean): Boolean {
+        if (!com.kyusui.app.ui.location.hasLocationPermission(appContext)) return false
         val intent = Intent(appContext, CourierLocationService::class.java)
             .setAction(CourierLocationService.ACTION_SHARE)
             .putExtra(CourierLocationService.EXTRA_ASSIGNMENT_ID, assignmentId)
@@ -71,6 +72,8 @@ class AndroidCourierLocationServiceLauncher(
             // API 31+: start dilarang karena aplikasi di latar belakang.
             false
         } catch (_: IllegalStateException) {
+            false
+        } catch (_: SecurityException) {
             false
         }
     }
@@ -111,9 +114,12 @@ class CourierLocationService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_SHARE -> startAsForeground(
-                isDuty = intent.getBooleanExtra(EXTRA_IS_DUTY, false)
-            )
+            ACTION_SHARE -> try {
+                startAsForeground(isDuty = intent.getBooleanExtra(EXTRA_IS_DUTY, false))
+            } catch (_: SecurityException) {
+                sharing.stop(TrackingStopReason.PERMISSION_NOT_GRANTED)
+                stopSelf()
+            }
 
             // StopService langsung menghasilkan onDestroy; branch ini hanya
             // membela diri bila sistem mengirim ulang intent lama.

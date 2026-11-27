@@ -17,5 +17,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Kyusui"
+rootProject.name = "Berkah Water"
 include(":app")

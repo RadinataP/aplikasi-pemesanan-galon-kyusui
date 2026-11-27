@@ -28,6 +28,16 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -70,41 +80,64 @@ private fun OnboardingFeature(title: String, description: String) {
     }
 }
 
-/** Reset otomatis belum dihubungkan karena backend saat ini belum menyediakan endpoint reset password. */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-fun ForgotPasswordScreen(onBack: () -> Unit) {
+fun ForgotPasswordScreen(onBack: () -> Unit, viewModel: PasswordOtpViewModel = hiltViewModel()) {
+    var email by remember { mutableStateOf("") }
+    var code by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var confirmation by remember { mutableStateOf("") }
+    val step = viewModel.step
+    val busy = viewModel.busy
+    androidx.compose.runtime.LaunchedEffect(step) {
+        if (step != 1) { code = ""; password = ""; confirmation = "" }
+        if (step == 0 && viewModel.email.isNotBlank()) email = viewModel.email
+    }
     Scaffold(containerColor = MaterialTheme.colorScheme.background, topBar = {
         TopAppBar(title = { Text("Pemulihan akun") }, navigationIcon = {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Kembali ke masuk") }
+            IconButton(onClick = onBack, enabled = !busy) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Kembali")
+            }
         })
     }) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 22.dp, vertical = 18.dp),
-            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(22.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Box(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF062B45), Color(0xFF087F9B), Color(0xFF13B6BD))), RoundedCornerShape(28.dp)).padding(24.dp)) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Surface(shape = CircleShape, color = Color.White.copy(alpha = .14f)) {
-                        Icon(Icons.Outlined.Info, contentDescription = null, tint = Color.White, modifier = Modifier.padding(14.dp))
-                    }
-                    Text("Pulihkan akses akun", style = MaterialTheme.typography.headlineSmall, color = Color.White)
-                    Text("Kami bantu arahkan langkah yang aman untuk mendapatkan kembali akses Berkah Water.",
-                        style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = .86f))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("BERKAH WATER", color = Color.White.copy(alpha = .8f), style = MaterialTheme.typography.labelMedium)
+                    Text(when (step) { 0 -> "Lupa kata sandi?"; 1 -> "Atur kata sandi baru"; else -> "Akun berhasil dipulihkan" }, color = Color.White, style = MaterialTheme.typography.headlineSmall)
+                    Text(when (step) { 0 -> "Langkah 1 dari 2 • Email akun"; 1 -> "Langkah 2 dari 2 • Kode dan kata sandi"; else -> "Silakan masuk dengan kata sandi baru." }, color = Color.White.copy(alpha = .9f))
                 }
             }
             Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                        Icon(Icons.Outlined.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Text("Reset kata sandi otomatis belum tersedia", style = MaterialTheme.typography.titleMedium)
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    when (step) {
+                        0 -> {
+                            Text("Masukkan email yang terdaftar pada akun Berkah Water.")
+                            OutlinedTextField(value = email, onValueChange = { email = it }, enabled = !busy, singleLine = true, label = { Text("Alamat email") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), modifier = Modifier.fillMaxWidth())
+                            PrimaryButton(text = "Kirim kode OTP", onClick = { viewModel.requestCode(email) }, enabled = email.isNotBlank(), isLoading = busy)
+                        }
+                        1 -> {
+                            Text("Email: ${viewModel.email}", style = MaterialTheme.typography.bodyMedium)
+                            Text("Gunakan kode terbaru dari email. Kode berlaku 10 menit.", style = MaterialTheme.typography.bodySmall)
+                            OutlinedTextField(value = code, onValueChange = { code = it.filter { c -> c in '0'..'9' }.take(6) }, enabled = !busy, label = { Text("Kode OTP (6 digit)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), modifier = Modifier.fillMaxWidth())
+                            OutlinedTextField(value = password, onValueChange = { password = it }, enabled = !busy, label = { Text("Kata sandi baru") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
+                            OutlinedTextField(value = confirmation, onValueChange = { confirmation = it }, enabled = !busy, label = { Text("Konfirmasi kata sandi") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
+                            Text("Minimal 8 karakter, huruf besar, huruf kecil, dan angka.", style = MaterialTheme.typography.bodySmall)
+                            PrimaryButton(text = "Simpan kata sandi", onClick = { viewModel.reset(code, password, confirmation) }, enabled = code.length == 6 && password.isNotBlank() && confirmation.isNotBlank(), isLoading = busy)
+                            TextButton(enabled = !busy, onClick = { code = ""; viewModel.requestCode(viewModel.email) }) { Text("Kirim ulang kode (tunggu 60 detik)") }
+                            TextButton(enabled = !busy, onClick = { viewModel.changeEmail() }) { Text("Ganti alamat email") }
+                        }
+                        else -> {
+                            Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Text("Kata sandi berhasil diperbarui. Sesi login sebelumnya telah dicabut.")
+                            PrimaryButton(text = "Kembali ke login", onClick = onBack)
+                        }
                     }
-                    Text("Saat ini backend Berkah Water belum menyediakan endpoint untuk mengirim tautan atau kode reset kata sandi. Karena itu, aplikasi belum dapat memproses reset secara otomatis.",
-                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Untuk sementara, hubungi pemilik atau pengelola Berkah Water agar akun dapat dibantu melalui proses verifikasi.",
-                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                    viewModel.message?.let { Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall) }
+                    viewModel.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
                 }
             }
-            Spacer(Modifier.height(2.dp))
-            PrimaryButton(text = "Kembali ke halaman masuk", onClick = onBack, modifier = Modifier.fillMaxWidth())
         }
     }
 }

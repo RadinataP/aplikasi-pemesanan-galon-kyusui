@@ -555,6 +555,7 @@ private fun NavGraphBuilder.customerGraph(
                     navController.navigate(RoutePaths.CUSTOMER_ORDER_DETAIL.replaceOrderId(orderId)) {
                         popUpTo(RoutePaths.CUSTOMER_HOME)
                     }
+                    navController.navigate(RoutePaths.CUSTOMER_PAYMENT_SELECTION.replaceOrderId(orderId))
                 }
             )
 
@@ -624,7 +625,13 @@ private fun NavGraphBuilder.customerGraph(
                 onRetry = orderDetailViewModel::loadOrder,
                 onCancel = orderDetailViewModel::cancelOrder,
                 onPay = { orderId ->
-                    navController.navigate(RoutePaths.CUSTOMER_PAYMENT_SELECTION.replaceOrderId(orderId))
+                    val payment = (uiState as? com.kyusui.app.ui.state.LoadState.Success)?.data?.payment
+                    val path = when (payment?.paymentMethod) {
+                        PaymentMethod.QRIS -> RoutePaths.CUSTOMER_QRIS_PAYMENT
+                        PaymentMethod.CASH -> RoutePaths.CUSTOMER_CASH_PAYMENT
+                        null -> RoutePaths.CUSTOMER_PAYMENT_SELECTION
+                    }
+                    navController.navigate(path.replaceOrderId(orderId))
                 },
                 onTrack = { orderId ->
                     navController.navigate(
@@ -947,6 +954,7 @@ private fun NavGraphBuilder.ownerGraph(
             onUpdateStatus = detailViewModel::updateStatus,
             onAssignCourier = detailViewModel::assignCourier,
             onRetryCouriers = detailViewModel::loadCouriers,
+            onConfirmCash = detailViewModel::confirmCash,
             onOpenQrisVerification = { orderId ->
                 navController.navigate(
                     AppRoute.OwnerQrisVerification(orderId).toRouteString()
@@ -1268,6 +1276,8 @@ private fun NavGraphBuilder.courierGraph(
             },
             onSelectFilter = listViewModel::setFilter,
             onRefresh = { listViewModel.loadAssignments(force = true) },
+            onClaim = listViewModel::claimOrder,
+            onRefreshPool = listViewModel::loadOpenOrders,
             onOpenHome = {
                 navController.navigate(RoutePaths.COURIER_HOME) {
                     launchSingleTop = true
@@ -1322,6 +1332,7 @@ private fun NavGraphBuilder.courierGraph(
                     )
                 }
             },
+            onOpenQrisVerification = { navController.navigate(RoutePaths.COURIER_QRIS_QUEUE) },
             onRetry = detailViewModel::loadDelivery,
             onMessageShown = detailViewModel::clearActionMessage,
             onBack = { navController.popBackStack() }
