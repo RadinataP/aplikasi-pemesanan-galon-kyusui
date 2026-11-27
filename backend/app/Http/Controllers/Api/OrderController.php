@@ -318,14 +318,17 @@ class OrderController extends Controller
         $order = DB::transaction(function () use ($order, $request): Order {
             $lockedOrder = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
             abort_unless(
-                $lockedOrder->order_status === OrderStatus::MENUNGGU_PEMBAYARAN->value,
+                in_array($lockedOrder->order_status, [OrderStatus::MENUNGGU_PEMBAYARAN->value, OrderStatus::MENUNGGU_DIPROSES->value], true)
+                    && !$lockedOrder->assignments()->exists()
+                    && (!$lockedOrder->payment || $lockedOrder->payment->payment_status === PaymentStatus::PENDING->value),
                 409,
                 'Pesanan tidak dapat dibatalkan pada status saat ini.',
             );
 
+            $previous = $lockedOrder->order_status;
             $lockedOrder->update(['order_status' => OrderStatus::DIBATALKAN->value]);
             $lockedOrder->statusHistories()->create([
-                'from_status' => OrderStatus::MENUNGGU_PEMBAYARAN->value,
+                'from_status' => $previous,
                 'to_status' => OrderStatus::DIBATALKAN->value,
                 'changed_by_user_id' => $request->user()->id,
                 'changed_at' => now(),

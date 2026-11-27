@@ -27,6 +27,11 @@ class DatabaseSeeder extends Seeder
             );
         }
 
+        // Never create demo accounts with known passwords in production.
+        if (! app()->environment(['local', 'testing'])) {
+            return;
+        }
+
         $customerRole = Role::where('name', 'CUSTOMER')->first();
         $ownerRole = Role::where('name', 'OWNER')->first();
         $courierRole = Role::where('name', 'COURIER')->first();

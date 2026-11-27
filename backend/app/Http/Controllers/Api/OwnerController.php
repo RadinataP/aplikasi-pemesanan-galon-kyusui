@@ -123,7 +123,7 @@ class OwnerController extends Controller
                 'note' => $validated['note'] ?? null,
                 'changed_at' => now(),
             ]);
-            event(new BusinessActionOccurred(
+            if ($lockedOrder->customer !== null) event(new BusinessActionOccurred(
                 $lockedOrder->customer->user_id,
                 'ORDER_PROCESSED',
                 'Pesanan Sedang Diproses',
@@ -173,7 +173,7 @@ class OwnerController extends Controller
             // yang sama; status setiap pesanan tetap divalidasi dan dikunci sendiri.
             $lockedOrder = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
             abort_unless(
-                $lockedOrder->order_status === OrderStatus::DIPROSES->value,
+                in_array($lockedOrder->order_status, [OrderStatus::MENUNGGU_DIPROSES->value, OrderStatus::DIPROSES->value, OrderStatus::MENUNGGU_PEMBAYARAN->value], true) && $lockedOrder->payment()->exists() && !$lockedOrder->assignments()->exists() && $lockedOrder->fulfillment_type === 'DELIVERY',
                 409,
                 'Pesanan tidak dapat ditugaskan pada status saat ini.',
             );
@@ -184,9 +184,10 @@ class OwnerController extends Controller
                 'status' => AssignmentStatus::ASSIGNED->value,
                 'assigned_at' => now(),
             ]);
+            $previous = $lockedOrder->order_status;
             $lockedOrder->update(['order_status' => OrderStatus::DITUGASKAN->value]);
             $lockedOrder->statusHistories()->create([
-                'from_status' => OrderStatus::DIPROSES->value,
+                'from_status' => $previous,
                 'to_status' => OrderStatus::DITUGASKAN->value,
                 'changed_by_user_id' => $request->user()->id,
                 'changed_at' => now(),
@@ -198,7 +199,7 @@ class OwnerController extends Controller
                 'Anda mendapat tugas pengantaran baru.',
                 ['order_id' => $lockedOrder->id, 'assignment_id' => $assignment->id],
             ));
-            event(new BusinessActionOccurred(
+            if ($lockedOrder->customer !== null) event(new BusinessActionOccurred(
                 $lockedOrder->customer->user_id,
                 'COURIER_ASSIGNED',
                 'Kurir Ditugaskan',
@@ -274,6 +275,8 @@ class OwnerController extends Controller
             ->with('order.customer.user:id,name')
             ->where('payment_method', PaymentMethod::QRIS->value)
             ->where('payment_status', PaymentStatus::WAITING_VERIFICATION->value)
+            ->whereHas('order', fn ($q) => $q->whereNotIn('order_status', [OrderStatus::SELESAI->value, OrderStatus::DIBATALKAN->value]))
+            ->when($request->user()->role?->name === 'COURIER', fn ($q) => $q->whereHas('order.assignments', fn ($a) => $a->where('courier_id', $request->user()->courier?->id ?? -1)))
             ->latest('id')
             ->paginate($validated['per_page'] ?? 20);
 
@@ -294,6 +297,7 @@ class OwnerController extends Controller
     public function proofHistory(Request $request, Order $order): JsonResponse
     {
         $this->authorizeOperations($request);
+        $this->authorizePaymentOrder($request, $order);
         $rows = PaymentProofHistory::query()
             ->with('actor:id,name')
             ->whereHas('payment', fn ($q) => $q->where('order_id', $order->id))
@@ -316,6 +320,7 @@ class OwnerController extends Controller
     public function historicalProof(Request $request, Order $order, PaymentProofHistory $history): BinaryFileResponse|JsonResponse
     {
         $this->authorizeOperations($request);
+        $this->authorizePaymentOrder($request, $order);
         abort_unless($history->payment()->where('order_id', $order->id)->exists(), 404, 'Histori bukti tidak ditemukan.');
         abort_unless(filled($history->proof_image), 404, 'File bukti historis tidak tersedia.');
         $disk = Storage::disk('local');
@@ -338,8 +343,8 @@ class OwnerController extends Controller
      */
     public function proof(Request $request, Order $order): BinaryFileResponse|JsonResponse|Response
     {
-        // Bukti pembayaran aktif hanya boleh diakses Owner, bukan Courier.
-        $this->authorizeOwner($request);
+        $this->authorizeOperations($request);
+        $this->authorizePaymentOrder($request, $order);
 
         $payment = $order->payment;
         abort_unless(
@@ -443,6 +448,7 @@ class OwnerController extends Controller
     public function verifyOrderPayment(Request $request, Order $order): JsonResponse
     {
         $this->authorizeOperations($request);
+        $this->authorizePaymentOrder($request, $order);
 
         $validated = $request->validate([
             'action' => ['required', 'string', 'in:APPROVE,REJECT'],
@@ -524,19 +530,21 @@ class OwnerController extends Controller
     private function approve(Request $request, Payment $payment): JsonResponse
     {
         DB::transaction(function () use ($request, $payment): void {
+            $order = Order::query()->whereKey($payment->order_id)->lockForUpdate()->firstOrFail();
             $lockedPayment = Payment::query()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
             $lockedPayment->load('order.customer.user');
+            abort_unless(!in_array($order->order_status, [OrderStatus::SELESAI->value, OrderStatus::DIBATALKAN->value], true), 409, 'Pesanan sudah ditutup.');
+            if ($lockedPayment->payment_method === PaymentMethod::CASH->value) {
+                abort_unless($request->user()->role?->name === 'OWNER', 403, 'Kurir mengonfirmasi tunai melalui tugasnya.');
+                abort_unless($lockedPayment->payment_status === PaymentStatus::PENDING->value, 409, 'Pembayaran sudah diproses.');
+                $lockedPayment->transitionTo(PaymentStatus::PAID, $request->user()->id);
+                return;
+            }
             abort_unless(
                 $lockedPayment->payment_method === PaymentMethod::QRIS->value
                 && $lockedPayment->payment_status === PaymentStatus::WAITING_VERIFICATION->value,
                 409,
                 'Pembayaran tidak dapat diverifikasi pada status saat ini.',
-            );
-            $order = $lockedPayment->order;
-            abort_unless(
-                $order !== null && $order->order_status === OrderStatus::MENUNGGU_PEMBAYARAN->value,
-                409,
-                'Status pesanan tidak valid untuk verifikasi pembayaran.',
             );
             abort_unless(
                 filled($lockedPayment->proof_image)
@@ -557,13 +565,15 @@ class OwnerController extends Controller
                 'decided_at' => now(),
             ]);
             $lockedPayment->transitionTo(PaymentStatus::PAID, $request->user()->id);
-            $order->update(['order_status' => OrderStatus::MENUNGGU_DIPROSES->value]);
-            $order->statusHistories()->create([
-                'from_status' => OrderStatus::MENUNGGU_PEMBAYARAN->value,
-                'to_status' => OrderStatus::MENUNGGU_DIPROSES->value,
-                'changed_by_user_id' => $request->user()->id,
-                'changed_at' => now(),
-            ]);
+            if ($order->order_status === OrderStatus::MENUNGGU_PEMBAYARAN->value) {
+                $order->update(['order_status' => OrderStatus::MENUNGGU_DIPROSES->value]);
+                $order->statusHistories()->create([
+                    'from_status' => OrderStatus::MENUNGGU_PEMBAYARAN->value,
+                    'to_status' => OrderStatus::MENUNGGU_DIPROSES->value,
+                    'changed_by_user_id' => $request->user()->id,
+                    'changed_at' => now(),
+                ]);
+            }
             event(new BusinessActionOccurred(
                 $order->customer->user_id,
                 'PAYMENT_QRIS_APPROVED',
@@ -602,6 +612,8 @@ class OwnerController extends Controller
     private function reject(Request $request, Payment $payment): JsonResponse
     {
         DB::transaction(function () use ($payment, $request): void {
+            $order = Order::query()->whereKey($payment->order_id)->lockForUpdate()->firstOrFail();
+            abort_unless(!in_array($order->order_status, [OrderStatus::SELESAI->value, OrderStatus::DIBATALKAN->value], true), 409, 'Pesanan sudah ditutup.');
             $lockedPayment = Payment::query()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
             $lockedPayment->load('order.customer.user');
             abort_unless(
@@ -671,6 +683,13 @@ class OwnerController extends Controller
             'statusHistories',
             'assignments.courier.user:id,name',
         ]);
+    }
+
+    private function authorizePaymentOrder(Request $request, Order $order): void
+    {
+        if ($request->user()->role?->name === 'COURIER') {
+            abort_unless($request->user()->courier && $order->assignments()->where('courier_id', $request->user()->courier->id)->exists(), 404);
+        }
     }
 
     private function authorizeOperations(Request $request): void

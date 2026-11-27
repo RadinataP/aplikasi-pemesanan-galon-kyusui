@@ -100,7 +100,7 @@ class OwnerControllerTest extends TestCase
         $this->assertDatabaseHas('orders', ['id' => $order->id, 'order_status' => OrderStatus::MENUNGGU_DIPROSES->value]);
     }
 
-    public function test_approve_rejects_order_that_is_no_longer_waiting_for_payment(): void
+    public function test_approve_keeps_delivery_status_when_order_is_already_processing(): void
     {
         [$ownerUser] = $this->owner();
         $order = $this->order(OrderStatus::DIPROSES);
@@ -109,8 +109,8 @@ class OwnerControllerTest extends TestCase
         $this->actingAs($ownerUser)->postJson('/api/v1/owner/orders/'.$order->id.'/payment-verification', [
             'action' => 'APPROVE',
         ])
-            ->assertStatus(409)
-            ->assertJsonPath('message', 'Status pesanan tidak valid untuk verifikasi pembayaran.');
+            ->assertOk();
+        $this->assertSame(OrderStatus::DIPROSES->value, $order->fresh()->order_status);
     }
 
     public function test_payment_verification_rejects_missing_proof_file(): void
@@ -437,13 +437,13 @@ class OwnerControllerTest extends TestCase
         // Tidak terautentikasi → 401.
         $this->get($url)->assertUnauthorized();
 
-        // Customer dan Courier bukan owner scope → 403 (spec 06 §24).
+        // Customer ditolak; kurir yang tidak ditugaskan tidak boleh melihat bukti.
         $customerUser = User::factory()->create(['role_id' => Role::where('name', 'CUSTOMER')->value('id')]);
         Customer::create(['user_id' => $customerUser->id]);
         $this->actingAs($customerUser)->get($url)->assertForbidden();
 
         [$courierUser] = $this->courier();
-        $this->actingAs($courierUser)->get($url)->assertForbidden();
+        $this->actingAs($courierUser)->get($url)->assertNotFound();
     }
 
     public function test_owner_proof_image_download_handles_missing_file_and_invalid_resource(): void

@@ -374,7 +374,6 @@ class OrderApiTest extends TestCase
 
         // Test pada setiap status selain MENUNGGU_PEMBAYARAN
         $blockedStatuses = [
-            'MENUNGGU_DIPROSES',
             'DIPROSES',
             'DITUGASKAN',
             'DALAM_PENGANTARAN',
