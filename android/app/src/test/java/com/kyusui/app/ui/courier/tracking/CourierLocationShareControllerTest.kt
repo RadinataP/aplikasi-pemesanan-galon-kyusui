@@ -6,6 +6,7 @@ import com.kyusui.app.core.NoNetworkException
 import com.kyusui.app.core.Result
 import com.kyusui.app.core.TrackingSchedule
 import com.kyusui.app.core.UnauthorizedException
+import com.kyusui.app.domain.model.CourierDutyState
 import com.kyusui.app.domain.model.CourierDeviceLocation
 import com.kyusui.app.domain.model.CourierLocationFix
 import com.kyusui.app.domain.model.GeoPoint
@@ -45,9 +46,8 @@ import org.junit.Test
  *  - upload satu-per-satu: pembacaan kedua yang mendahului disebar ataupun
  *    datang saat upload sebelumnya belum selesai tidak memunculkan pengirim
  *    kedua;
- *  - session berhenti saat backend menolak (401/403/409), izin hilang,
- *    provider mati, atau sumber lokasi tak tersedia — tapi TIDAK berhenti
- *    untuk gangguan jaringan sementara;
+ *  - session berhenti saat autentikasi/izin hilang atau tak ada lagi tugas;
+ *    GPS/provider dan jaringan sementara dapat pulih tanpa sesi baru;
  *  - [CourierLocationServiceLauncher] ikut dihentikan bersama session, dan
  *    listener Fused Location Provider benar-benar dilepas (lewat
  *    [FakeDeviceLocationSource.streamCancelled]);
@@ -66,6 +66,8 @@ class CourierLocationShareControllerTest {
     fun setup() {
         Dispatchers.setMain(dispatcher)
         courierRepository = mockk(relaxed = true)
+        coEvery { courierRepository.getActiveAssignmentIds() } returns Result.success(listOf(ASSIGNMENT_ID))
+        coEvery { courierRepository.getDutyState() } returns Result.success(CourierDutyState())
         locationSource = FakeDeviceLocationSource()
         launcher = FakeCourierLocationServiceLauncher()
     }
@@ -198,6 +200,8 @@ class CourierLocationShareControllerTest {
         assertTrue(controller.state.value.isSharing)
         assertTrue(controller.state.value.submitState is SubmitState.Submitting)
 
+        // Reload UI must not unlock an upload in flight either.
+        controller.clearMessage()
         // Pembacaan kedua datang saat upload masih berjalan: harus dibuang,
         // bukan memunculkan pengirim kedua.
         locationSource.emit(LocationReadResult.Fix(NEW_FIX))
@@ -324,7 +328,7 @@ class CourierLocationShareControllerTest {
     }
 
     @Test
-    fun `a disabled provider stops the session with an explanation and sends nothing`() = runTest(dispatcher) {
+    fun `a disabled provider keeps the session with an explanation and sends nothing`() = runTest(dispatcher) {
         val controller = controller()
 
         controller.start(ASSIGNMENT_ID)
@@ -334,16 +338,20 @@ class CourierLocationShareControllerTest {
         runCurrent()
 
         val state = controller.state.value
-        assertFalse(state.isSharing)
-        assertEquals(TrackingStopReason.PROVIDER_DISABLED, state.stopReason)
+        assertTrue(state.isSharing)
+        assertNull(state.stopReason)
         assertEquals(LocationReadStatus.Unavailable, state.locationReadStatus)
         assertEquals(CourierLocationShareController.PROVIDER_DISABLED_MESSAGE, state.message)
         coVerify(exactly = 0) { courierRepository.updateLocation(any(), any()) }
-        assertTrue(launcher.stopped)
+        assertFalse(launcher.stopped)
+        coEvery { courierRepository.updateLocation(any(), any()) } returns Result.success(SERVER_LOCATION)
+        locationSource.emit(LocationReadResult.Fix(FIX))
+        runCurrent()
+        assertEquals(SERVER_LOCATION, controller.state.value.lastReportedLocation)
     }
 
     @Test
-    fun `an unavailable source stops the session with an explanation`() = runTest(dispatcher) {
+    fun `an unavailable source keeps the session with an explanation`() = runTest(dispatcher) {
         val controller = controller()
 
         controller.start(ASSIGNMENT_ID)
@@ -353,11 +361,15 @@ class CourierLocationShareControllerTest {
         runCurrent()
 
         val state = controller.state.value
-        assertFalse(state.isSharing)
-        assertEquals(TrackingStopReason.LOCATION_UNAVAILABLE, state.stopReason)
+        assertTrue(state.isSharing)
+        assertNull(state.stopReason)
         assertEquals(CourierLocationShareController.LOCATION_UNAVAILABLE_MESSAGE, state.message)
         coVerify(exactly = 0) { courierRepository.updateLocation(any(), any()) }
-        assertTrue(launcher.stopped)
+        assertFalse(launcher.stopped)
+        coEvery { courierRepository.updateLocation(any(), any()) } returns Result.success(SERVER_LOCATION)
+        locationSource.emit(LocationReadResult.Fix(FIX))
+        runCurrent()
+        assertEquals(SERVER_LOCATION, controller.state.value.lastReportedLocation)
     }
 
     // --- Stop manual ---
@@ -447,6 +459,8 @@ class CourierLocationShareControllerTest {
 
     @Test
     fun `a fix during duty is uploaded through the duty endpoint`() = runTest(dispatcher) {
+        coEvery { courierRepository.getActiveAssignmentIds() } returns Result.success(emptyList())
+        coEvery { courierRepository.getDutyState() } returns Result.success(CourierDutyState(isActive = true))
         coEvery { courierRepository.sendDutyLocation(FIX) } returns Result.success(SERVER_LOCATION)
         val controller = controller()
 
@@ -489,6 +503,8 @@ class CourierLocationShareControllerTest {
     @Test
     fun `conflict on duty upload stops the session with the duty reason`() =
         runTest(dispatcher) {
+            coEvery { courierRepository.getActiveAssignmentIds() } returns Result.success(emptyList())
+            coEvery { courierRepository.getDutyState() } returns Result.success(CourierDutyState(isActive = true))
             coEvery { courierRepository.sendDutyLocation(FIX) } returns Result.Failure(
                 ConflictException("Sesi bertugas sudah berakhir.")
             )
@@ -523,6 +539,52 @@ class CourierLocationShareControllerTest {
             // Tanpa foreground service tidak boleh ada loop acquisition.
             assertNull(locationSource.requestedIntervalMillis)
         }
+
+    @Test
+    fun `conflict on first of twelve deliveries keeps sharing for remaining orders`() = runTest(dispatcher) {
+        val ids = (7..18).map { it.toString() }
+        coEvery { courierRepository.getActiveAssignmentIds() } returnsMany listOf(
+            Result.success(ids), Result.success(ids.drop(1)), Result.success(ids.drop(1)), Result.success(emptyList())
+        )
+        coEvery { courierRepository.updateLocation(ASSIGNMENT_ID, any()) } returns Result.failure(ConflictException())
+        coEvery { courierRepository.updateLocation(OTHER_ASSIGNMENT_ID, any()) } returns Result.success(SERVER_LOCATION)
+        val controller = controller()
+        controller.start(ASSIGNMENT_ID)
+        runCurrent()
+        locationSource.emit(LocationReadResult.Fix(FIX))
+        runCurrent()
+        assertTrue(controller.state.value.isSharing)
+        locationSource.emit(LocationReadResult.Fix(NEW_FIX))
+        runCurrent()
+        coVerify(exactly = 1) { courierRepository.updateLocation(OTHER_ASSIGNMENT_ID, NEW_FIX) }
+        assertEquals(listOf(ASSIGNMENT_ID), launcher.started)
+        assertEquals(SERVER_LOCATION, controller.state.value.lastReportedLocation)
+        locationSource.emit(LocationReadResult.Fix(FIX))
+        runCurrent()
+        assertFalse(controller.state.value.isSharing)
+        assertEquals(TrackingStopReason.DELIVERY_NOT_ACTIVE, controller.state.value.stopReason)
+    }
+
+    @Test
+    fun `duty continues after last delivery and stops when server ends duty`() = runTest(dispatcher) {
+        coEvery { courierRepository.getActiveAssignmentIds() } returns Result.success(emptyList())
+        coEvery { courierRepository.getDutyState() } returnsMany listOf(
+            Result.success(CourierDutyState(isActive = true)), Result.success(CourierDutyState())
+        )
+        coEvery { courierRepository.sendDutyLocation(any()) } returns Result.success(SERVER_LOCATION)
+        val controller = controller()
+        controller.start(ASSIGNMENT_ID)
+        runCurrent()
+        locationSource.emit(LocationReadResult.Fix(FIX))
+        runCurrent()
+        assertTrue(controller.state.value.isOnDuty)
+        assertNull(controller.state.value.sessionAssignmentId)
+        coVerify(exactly = 1) { courierRepository.sendDutyLocation(FIX) }
+        locationSource.emit(LocationReadResult.Fix(NEW_FIX))
+        runCurrent()
+        assertFalse(controller.state.value.isSharing)
+        assertEquals(TrackingStopReason.DUTY_SESSION_ENDED, controller.state.value.stopReason)
+    }
 
     // --- Helper ---
 

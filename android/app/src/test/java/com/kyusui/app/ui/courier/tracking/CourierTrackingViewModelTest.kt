@@ -9,6 +9,7 @@ import com.kyusui.app.domain.model.CourierDeviceLocation
 import com.kyusui.app.domain.model.CourierLocationFix
 import com.kyusui.app.domain.model.GeoPoint
 import com.kyusui.app.domain.repository.CourierRepository
+import com.kyusui.app.domain.model.CourierDutyState
 import com.kyusui.app.ui.location.LocationPermissionState
 import com.kyusui.app.ui.state.LoadState
 import com.kyusui.app.ui.state.SubmitState
@@ -51,6 +52,8 @@ class CourierTrackingViewModelTest {
     fun setup() {
         Dispatchers.setMain(dispatcher)
         courierRepository = mockk(relaxed = true)
+        coEvery { courierRepository.getActiveAssignmentIds() } returns Result.success(emptyList())
+        coEvery { courierRepository.getDutyState() } returns Result.success(CourierDutyState())
         sharing = FakeCourierLocationSharing()
     }
 

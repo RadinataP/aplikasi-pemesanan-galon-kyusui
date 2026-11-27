@@ -54,6 +54,7 @@ class AssignedOrderViewModelTest {
     fun setup() {
         Dispatchers.setMain(dispatcher)
         repository = mockk(relaxed = true)
+        coEvery { repository.getOpenOrders() } returns Result.Success(emptyList())
     }
 
     @After
@@ -71,7 +72,7 @@ class AssignedOrderViewModelTest {
             )
         )
 
-        val viewModel = AssignedOrderViewModel(repository)
+        val viewModel = AssignedOrderViewModel(repository, io.mockk.mockk(relaxed = true))
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
@@ -93,7 +94,7 @@ class AssignedOrderViewModelTest {
             )
         )
 
-        val viewModel = AssignedOrderViewModel(repository)
+        val viewModel = AssignedOrderViewModel(repository, io.mockk.mockk(relaxed = true))
         advanceUntilIdle()
 
         viewModel.setFilter(CourierAssignmentFilter.ASSIGNED)
@@ -122,7 +123,7 @@ class AssignedOrderViewModelTest {
                 listOf(delivery(id = "7", status = AssignmentStatus.ASSIGNED))
             )
 
-            val viewModel = AssignedOrderViewModel(repository)
+            val viewModel = AssignedOrderViewModel(repository, io.mockk.mockk(relaxed = true))
             advanceUntilIdle()
 
             viewModel.setFilter(CourierAssignmentFilter.COMPLETED)
@@ -138,7 +139,7 @@ class AssignedOrderViewModelTest {
     fun `empty list from the backend becomes the empty state`() = runTest(dispatcher) {
         coEvery { repository.getAssignments() } returns Result.Success(emptyList())
 
-        val viewModel = AssignedOrderViewModel(repository)
+        val viewModel = AssignedOrderViewModel(repository, io.mockk.mockk(relaxed = true))
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
@@ -159,7 +160,7 @@ class AssignedOrderViewModelTest {
             UnauthorizedException("Token tidak valid.")
         )
 
-        val viewModel = AssignedOrderViewModel(repository)
+        val viewModel = AssignedOrderViewModel(repository, io.mockk.mockk(relaxed = true))
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
@@ -179,7 +180,7 @@ class AssignedOrderViewModelTest {
             Result.Failure(ForbiddenException("Anda tidak memiliki akses."))
         )
 
-        val viewModel = AssignedOrderViewModel(repository)
+        val viewModel = AssignedOrderViewModel(repository, io.mockk.mockk(relaxed = true))
         advanceUntilIdle()
 
         viewModel.loadAssignments(force = true)
@@ -201,7 +202,7 @@ class AssignedOrderViewModelTest {
             Result.Success(listOf(delivery(id = "8", status = AssignmentStatus.ASSIGNED)))
         )
 
-        val viewModel = AssignedOrderViewModel(repository)
+        val viewModel = AssignedOrderViewModel(repository, io.mockk.mockk(relaxed = true))
         advanceUntilIdle()
         viewModel.loadAssignments(force = true)
         advanceUntilIdle()
@@ -224,7 +225,7 @@ class AssignedOrderViewModelTest {
             Result.Failure(ForbiddenException("Anda tidak memiliki akses."))
         )
 
-        val viewModel = AssignedOrderViewModel(repository)
+        val viewModel = AssignedOrderViewModel(repository, io.mockk.mockk(relaxed = true))
         advanceUntilIdle()
         viewModel.loadAssignments(force = true)
         advanceUntilIdle()
@@ -240,7 +241,7 @@ class AssignedOrderViewModelTest {
             listOf(delivery(id = "7", status = AssignmentStatus.ASSIGNED))
         )
 
-        val viewModel = AssignedOrderViewModel(repository)
+        val viewModel = AssignedOrderViewModel(repository, io.mockk.mockk(relaxed = true))
         viewModel.loadAssignments(force = true)
         viewModel.loadAssignments(force = true)
         advanceUntilIdle()
@@ -257,7 +258,7 @@ class AssignedOrderViewModelTest {
             )
         )
 
-        val viewModel = AssignedOrderViewModel(repository)
+        val viewModel = AssignedOrderViewModel(repository, io.mockk.mockk(relaxed = true))
         advanceUntilIdle()
 
         viewModel.setFilter(CourierAssignmentFilter.ACTIVE)
@@ -280,7 +281,7 @@ class AssignedOrderViewModelTest {
             )
         )
 
-        val viewModel = AssignedOrderViewModel(repository)
+        val viewModel = AssignedOrderViewModel(repository, io.mockk.mockk(relaxed = true))
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
@@ -299,7 +300,7 @@ class AssignedOrderViewModelTest {
             )
         )
 
-        val viewModel = AssignedOrderViewModel(repository)
+        val viewModel = AssignedOrderViewModel(repository, io.mockk.mockk(relaxed = true))
         advanceUntilIdle()
 
         val state = viewModel.uiState.value

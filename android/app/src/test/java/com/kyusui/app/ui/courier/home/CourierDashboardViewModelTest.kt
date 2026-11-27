@@ -65,6 +65,7 @@ class CourierDashboardViewModelTest {
         // jawaban server yang sah (bukan mock Result yang tidak cocok `when`).
         coEvery { repository.getDashboard() } returns Result.Success(dashboard())
         coEvery { repository.getDutyState() } returns Result.Success(CourierDutyState())
+        coEvery { repository.getActiveAssignmentIds() } returns Result.Success(emptyList())
     }
 
     @After
@@ -334,7 +335,8 @@ class CourierDashboardViewModelTest {
     @Test
     fun `an active duty session on the server is reflected and resumes sharing`() =
         runTest(dispatcher) {
-            coEvery { repository.getDutyState() } returns Result.Success(
+            coEvery { repository.getDashboard() } returns Result.Success(dashboard().copy(activeDelivery = null, activeDeliveries = emptyList()))
+        coEvery { repository.getDutyState() } returns Result.Success(
                 CourierDutyState(
                     isActive = true,
                     session = CourierDutySession(id = "5", isActive = true)
@@ -353,6 +355,7 @@ class CourierDashboardViewModelTest {
 
     @Test
     fun `starting duty posts to the server then starts sharing`() = runTest(dispatcher) {
+        coEvery { repository.getDashboard() } returns Result.Success(dashboard().copy(activeDelivery = null, activeDeliveries = emptyList()))
         coEvery { repository.getDutyState() } returnsMany listOf(
             Result.Success(CourierDutyState()),
             Result.Success(CourierDutyState(isActive = true))
@@ -396,6 +399,7 @@ class CourierDashboardViewModelTest {
 
     @Test
     fun `stopping duty posts to the server and stops sharing`() = runTest(dispatcher) {
+        coEvery { repository.getDashboard() } returns Result.Success(dashboard().copy(activeDelivery = null, activeDeliveries = emptyList()))
         coEvery { repository.getDutyState() } returns Result.Success(
             CourierDutyState(
                 isActive = true,
