@@ -1,0 +1,38 @@
+BERKAH WATER — DRAFT LISTING APKPURE
+Package name: com.kyusui.app
+App name: Berkah Water
+App type: Application
+Category (usulan): Shopping
+Version name: 1.0.0
+Version code: 1 (naikkan bila pernah ada rilis dengan kode ini)
+Minimum SDK: 24
+Target SDK: 34
+Website: https://depot.berkahwater.my.id/
+Privacy policy: https://depot.berkahwater.my.id/privacy-policy
+Terms: https://depot.berkahwater.my.id/terms-and-conditions
+Support: https://depot.berkahwater.my.id/support
+Account deletion: https://depot.berkahwater.my.id/delete-account
+Developer name and email: isi sesuai identitas dan alamat email resmi yang benar-benar dikelola.
+Content rating: jawab kuesioner toko sesuai isi aplikasi, jangan menebak.
+
+SHORT DESCRIPTION
+Pesan air galon, pilih pembayaran, dan pantau pengantaran pesanan Anda.
+
+FULL DESCRIPTION
+Berkah Water merupakan aplikasi pemesanan dan pengantaran air galon yang menghubungkan pelanggan, pemilik depot, dan kurir.
+
+Pelanggan dapat memilih produk, memesan air galon, memilih pembayaran QRIS atau tunai, dan melihat status pengantaran serta riwayat pesanan. Pemilik depot dan kurir menggunakan fitur operasional sesuai peran masing-masing.
+
+Fitur:
+- Pemesanan air galon secara online.
+- Pembayaran QRIS dengan verifikasi bukti pembayaran, atau tunai.
+- Status pesanan dan pengantaran.
+- Riwayat transaksi dan pengelolaan profil.
+- Pengelolaan pesanan bagi pemilik depot dan kurir.
+
+Ketersediaan layanan mengikuti area dan jam operasional depot.
+
+WHAT'S NEW
+Versi perdana Berkah Water: pemesanan air galon, pembayaran QRIS dan tunai, pengantaran, serta pengelolaan pesanan berdasarkan peran pengguna.
+
+Catatan: cek semua field dan batas ukuran aset pada console APKPure sebelum submit. Jangan mengklaim FCM aktif sebelum diuji. Tautan legal baru akan tersedia setelah deploy.
