@@ -48,7 +48,8 @@ data class Order(
      * tombol; validasi transisi tetap milik backend.
      */
     val canBeCancelled: Boolean
-        get() = orderStatus == OrderStatus.MENUNGGU_PEMBAYARAN
+        get() = orderStatus in listOf(OrderStatus.MENUNGGU_PEMBAYARAN, OrderStatus.MENUNGGU_DIPROSES) &&
+            (payment == null || payment.paymentStatus == PaymentStatus.PENDING)
 }
 
 data class OrderItem(

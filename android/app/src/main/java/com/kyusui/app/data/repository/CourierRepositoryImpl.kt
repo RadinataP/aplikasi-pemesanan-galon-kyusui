@@ -60,6 +60,26 @@ class CourierRepositoryImpl @Inject constructor(
      * dipetakan ke list. Android tidak membuat halaman berikutnya yang tidak
      * ada di endpoint ini.
      */
+    override suspend fun getOpenOrders(): Result<List<com.kyusui.app.domain.model.OpenCourierOrder>> = safeApiCall {
+        courierApi.openOrders().requireData().map { dto ->
+            com.kyusui.app.domain.model.OpenCourierOrder(
+                dto.order_id.toString(), dto.order_number, dto.customer?.name, dto.delivery_address,
+                dto.items.map { item -> com.kyusui.app.domain.model.CourierDeliveryItem(item.product_name.orEmpty(), item.quantity, item.unit_price, item.line_total) },
+                dto.total_amount, dto.payment?.let { pay -> com.kyusui.app.domain.model.CourierDeliveryPayment(
+                    com.kyusui.app.domain.model.PaymentMethod.fromApiValue(pay.method),
+                    com.kyusui.app.domain.model.PaymentStatus.fromApiValue(pay.status)) }
+            )
+        }
+    }
+
+    override suspend fun claimOrder(orderId: String): Result<CourierDelivery> = safeApiCall {
+        courierApi.claimOrder(orderId).requireDeliveryBody()
+    }
+
+    override suspend fun getActiveAssignmentIds(): Result<List<String>> = safeApiCall {
+        courierApi.activeAssignmentIds().requireData()
+    }
+
     override suspend fun getAssignments(): Result<List<CourierDelivery>> = safeApiCall {
         courierApi.assignments().requireData().map { it.toDomain() }
     }

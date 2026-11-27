@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 650 650" fill="none">
+<defs>
+ <linearGradient id="body" x1="0" y1="0" x2="1" y2=".15" gradientUnits="objectBoundingBox"><stop stop-color="#123b80"/><stop offset=".14" stop-color="#3a94d1"/><stop offset=".31" stop-color="#c1f3ff"/><stop offset=".44" stop-color="#75c8ec"/><stop offset=".7" stop-color="#218cc9"/><stop offset=".88" stop-color="#12639e"/><stop offset="1" stop-color="#0a356c"/></linearGradient>
+ <linearGradient id="water" x1="0" y1="0" x2="0.8" y2="1"><stop stop-color="#d9fbff" stop-opacity=".65"/><stop offset=".4" stop-color="#6cd5f8" stop-opacity=".25"/><stop offset="1" stop-color="#063f8c" stop-opacity=".5"/></linearGradient>
+ <linearGradient id="cap" x1="0" x2="1" y1="0" y2="0"><stop stop-color="#0b3e82"/><stop offset=".35" stop-color="#479fe7"/><stop offset=".67" stop-color="#1467b7"/><stop offset="1" stop-color="#052c66"/></linearGradient>
+ <linearGradient id="label" x1="0" x2="1" y1="0" y2=".1"><stop stop-color="#d9f6ff"/><stop offset=".3" stop-color="#fff"/><stop offset=".76" stop-color="#e4f7ff"/><stop offset="1" stop-color="#9ac8df"/></linearGradient>
+ <radialGradient id="glow"><stop stop-color="#c8f4ff" stop-opacity=".9"/><stop offset="1" stop-color="#d8f7ff" stop-opacity="0"/></radialGradient>
+ <filter id="shadow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="18"/></filter>
+ <clipPath id="clip"><path d="M255 103h140v39c0 24 20 40 46 52 53 25 72 51 77 100l9 211c2 46-23 65-69 72-70 10-199 10-269 0-46-7-71-26-69-72l9-211c5-49 24-75 77-100 26-12 49-28 49-52z"/></clipPath>
+</defs>
+<circle cx="325" cy="316" r="310" fill="url(#glow)"/>
+<ellipse cx="325" cy="592" rx="221" ry="24" fill="#0d527d" opacity=".22" filter="url(#shadow)"/>
+<g transform="translate(20 -10) rotate(7 325 325)">
+ <path d="M255 103h140v39c0 24 20 40 46 52 53 25 72 51 77 100l9 211c2 46-23 65-69 72-70 10-199 10-269 0-46-7-71-26-69-72l9-211c5-49 24-75 77-100 26-12 49-28 49-52z" fill="url(#body)" stroke="#226495" stroke-width="3"/>
+ <g clip-path="url(#clip)">
+  <path d="M103 254q100-49 210 0t231-4v340H103z" fill="url(#water)"/>
+  <path d="M130 280Q325 306 521 280M125 322Q325 349 525 322M120 500Q325 530 528 500M120 537Q325 568 528 537" stroke="#0b4e89" stroke-width="12" opacity=".48"/>
+  <path d="M130 275Q325 300 521 275M125 316Q325 343 525 316M120 493Q325 523 528 493M120 530Q325 561 528 530" stroke="#d9faff" stroke-width="4" opacity=".75"/>
+  <path d="M260 160c-22 57-91 57-104 127l-7 207c-1 35 9 47 23 51" stroke="#e4fbff" stroke-width="13" stroke-linecap="round" opacity=".65"/>
+  <path d="M282 177c-14 39-53 43-67 87" stroke="#fff" stroke-width="6" stroke-linecap="round" opacity=".65"/>
+  <path d="M432 220q54 35 57 85l8 202" stroke="#043c72" stroke-width="18" opacity=".18" stroke-linecap="round"/>
+  <g fill="#e5fbff" opacity=".52"><circle cx="209" cy="245" r="6"/><circle cx="229" cy="232" r="3"/><circle cx="456" cy="495" r="8"/><circle cx="443" cy="515" r="4"/><circle cx="185" cy="548" r="4"/></g>
+  <path d="M108 353Q325 380 540 353v115q-215 39-432 0z" fill="url(#label)"/>
+  <path d="M110 451q93 28 192 9t238-12v22q-215 39-430-2z" fill="#1077b7" opacity=".88"/>
+  <path d="M325 365c-13 17-23 28-23 39a23 23 0 0 0 46 0c0-11-10-22-23-39z" fill="#1689c6"/>
+  <path d="M313 404a12 12 0 0 0 9 12" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+  <text x="325" y="437" fill="#0e4274" font-family="Arial,sans-serif" font-size="21" font-weight="800" letter-spacing="4" text-anchor="middle">BERKAH WATER</text>
+  <text x="325" y="452" fill="#28759d" font-family="Arial,sans-serif" font-size="8" font-weight="700" letter-spacing="2" text-anchor="middle">AIR MINUM GALON</text>
+ </g>
+ <path d="M251 120q74 13 148 0v15q-74 14-148 0z" fill="#166ba1" stroke="#0f528e" stroke-width="2"/>
+ <rect x="245" y="61" width="160" height="64" rx="15" fill="url(#cap)" stroke="#0c447d" stroke-width="2"/>
+ <ellipse cx="325" cy="64" rx="75" ry="13" fill="#57a9ed" stroke="#195a97" stroke-width="2"/>
+ <g stroke="#b5e9ff" stroke-width="2" opacity=".4"><path d="M259 78v35m12-35v38m12-38v40m12-39v40m12-39v40m12-39v40m12-40v40m12-40v40m12-41v40m12-42v40m12-42v39m12-41v37"/></g>
+ <path d="M259 112q67 11 132 0" stroke="#0b3772" stroke-width="4" opacity=".6"/>
+</g>
+<g fill="#fff" opacity=".8"><circle cx="106" cy="181" r="5"/><circle cx="551" cy="188" r="8"/><circle cx="574" cy="218" r="3"/><circle cx="88" cy="431" r="7"/></g>
+</svg>

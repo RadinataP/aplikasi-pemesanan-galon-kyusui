@@ -31,6 +31,12 @@ import com.kyusui.app.domain.model.CourierLocationFix
  *   kontrak ini.
  */
 interface CourierRepository {
+    suspend fun getOpenOrders(): Result<List<com.kyusui.app.domain.model.OpenCourierOrder>> = Result.success(emptyList())
+    suspend fun claimOrder(orderId: String): Result<CourierDelivery> = Result.failure("Pengambilan pesanan belum tersedia.")
+    suspend fun getActiveAssignmentIds(): Result<List<String>> = getAssignments().map { list ->
+        list.filter { it.canPostLocation }.map { it.id }
+    }
+
 
     suspend fun getAssignments(): Result<List<CourierDelivery>>
 

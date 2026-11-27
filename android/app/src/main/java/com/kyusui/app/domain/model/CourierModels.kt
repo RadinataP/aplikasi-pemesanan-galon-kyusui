@@ -188,11 +188,22 @@ data class CourierCashReceipt(
  * nama customer pada beranda dan mengambil nama customer dari
  * `GET /courier/assignments` saat kurir membuka daftar assignment.
  */
+data class OpenCourierOrder(
+    val id: String,
+    val number: String,
+    val customerName: String?,
+    val address: String?,
+    val items: List<CourierDeliveryItem>,
+    val totalAmount: String,
+    val payment: CourierDeliveryPayment?
+)
+
 data class CourierDashboard(
     val activeDelivery: CourierDashboardOrder? = null,
     val todayDeliveries: List<CourierDashboardOrder> = emptyList(),
     val summary: CourierDashboardSummary,
-    val unreadNotifications: Int = 0
+    val unreadNotifications: Int = 0,
+    val activeDeliveries: List<CourierDashboardOrder> = listOfNotNull(activeDelivery)
 )
 
 data class CourierDashboardSummary(

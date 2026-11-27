@@ -70,11 +70,9 @@ class CourierDashboardViewModel @Inject constructor(
 
         viewModelScope.launch {
             when (val result = courierRepository.getDashboard()) {
-                is Result.Success -> _uiState.update {
-                    it.copy(
-                        dashboardState = LoadState.Success(result.data),
-                        isRefreshing = false
-                    )
+                is Result.Success -> {
+                    _uiState.update { it.copy(dashboardState = LoadState.Success(result.data), isRefreshing = false) }
+                    result.data.activeDeliveries.firstNotNullOfOrNull { it.assignmentId }?.let { sharing.start(it) }
                 }
 
                 is Result.Failure -> _uiState.update { state ->
@@ -162,7 +160,8 @@ class CourierDashboardViewModel @Inject constructor(
         viewModelScope.launch {
             when (val result = courierRepository.stopDuty()) {
                 is Result.Success -> {
-                    sharing.stop(TrackingStopReason.USER_REQUESTED)
+                    val remaining = courierRepository.getActiveAssignmentIds()
+                    if (remaining is Result.Success && remaining.data.isEmpty()) sharing.stop(TrackingStopReason.USER_REQUESTED)
                     _uiState.update {
                         it.copy(
                             isDutyActionInProgress = false,

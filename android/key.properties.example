@@ -1,0 +1,6 @@
+# Salin menjadi key.properties di root android/ (jangan commit).
+# Gunakan forward slash pada path Windows atau path relatif root Android.
+storeFile=../private/berkah-water-release.jks
+storePassword=
+keyAlias=berkah-water
+keyPassword=

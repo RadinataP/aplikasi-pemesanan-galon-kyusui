@@ -1,4 +1,4 @@
-﻿package com.kyusui.app.ui.owner.orders
+package com.kyusui.app.ui.owner.orders
 
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -50,6 +50,17 @@ class OwnerOrderDetailViewModel @Inject constructor(
 
     init {
         loadOrder()
+    }
+
+    fun confirmCash() {
+        if (_uiState.value.isUpdatingStatus) return
+        _uiState.update { it.copy(statusSubmitState = SubmitState.Submitting, statusMessage = null) }
+        viewModelScope.launch {
+            when (val result = ownerRepository.verifyPayment(orderId, com.kyusui.app.domain.model.OwnerVerificationAction.APPROVE)) {
+                is Result.Success -> { loadOrder() }
+                is Result.Failure -> _uiState.update { it.copy(statusSubmitState = result.toSubmitError()) }
+            }
+        }
     }
 
     fun loadOrder() {

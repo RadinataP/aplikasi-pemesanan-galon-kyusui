@@ -1,4 +1,4 @@
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+﻿import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import java.util.Properties
 import java.net.URI
 
@@ -9,6 +9,11 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    id("com.google.gms.google-services") version "4.4.2" apply false
+}
+
+if (file("google-services.json").isFile) {
+    apply(plugin = "com.google.gms.google-services")
 }
 
 // API URL dapat dioverride tanpa mengubah source atau menyimpan alamat lokal
@@ -18,10 +23,10 @@ val kyusuiLocalProperties = Properties().apply {
 }
 fun buildConfigString(value: String): String = "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
 val debugApiBaseUrl = providers.gradleProperty("kyusuiApiBaseUrl")
-    .orElse(kyusuiLocalProperties.getProperty("KYUSUI_API_BASE_URL") ?: "http://10.0.2.2:8000/api/v1/")
+    .orElse(kyusuiLocalProperties.getProperty("KYUSUI_API_BASE_URL") ?: "https://api.berkahwater.my.id/api/v1/")
     .get()
 val releaseApiBaseUrl = providers.gradleProperty("kyusuiProdApiBaseUrl")
-    .orElse(kyusuiLocalProperties.getProperty("KYUSUI_PROD_API_BASE_URL") ?: "https://api.kyusui.example.com/api/v1/")
+    .orElse(kyusuiLocalProperties.getProperty("KYUSUI_PROD_API_BASE_URL") ?: "https://api.berkahwater.my.id/api/v1/")
     .get()
 
 require(debugApiBaseUrl.endsWith("/")) {
@@ -34,9 +39,8 @@ require(releaseApiBaseUrl.startsWith("https://") && releaseApiBaseUrl.endsWith("
     "KYUSUI_PROD_API_BASE_URL harus berupa URL HTTPS lengkap dan diakhiri /."
 }
 
-// URL contoh tetap diperbolehkan saat kompilasi debug, tetapi tidak boleh masuk
-// ke artefak release. URL produksi diberikan melalui -PkyusuiProdApiBaseUrl atau
-// local.properties (file lokal ini tidak dibagikan).
+// Default menggunakan domain Berkah Water. Override melalui Gradle atau
+// local.properties tetap tersedia; URL placeholder diblokir pada release.
 fun validateReleaseApiBaseUrl() {
     val host = runCatching {
         URI.create(releaseApiBaseUrl).host?.lowercase()
@@ -53,12 +57,33 @@ tasks.configureEach {
     }
 }
 
+val releaseSigningFile = rootProject.file("key.properties")
+val releaseSigning = Properties().apply {
+    if (releaseSigningFile.isFile) releaseSigningFile.inputStream().use { load(it) }
+}
+if (releaseSigningFile.isFile) {
+    require(listOf("storeFile", "storePassword", "keyAlias", "keyPassword").all { !releaseSigning.getProperty(it).isNullOrBlank() }) {
+        "key.properties belum lengkap."
+    }
+    require(rootProject.file(releaseSigning.getProperty("storeFile")).isFile) { "Keystore release tidak ditemukan." }
+}
+
 android {
+    signingConfigs {
+        if (releaseSigningFile.isFile) {
+            create("localRelease") {
+                storeFile = rootProject.file(releaseSigning.getProperty("storeFile"))
+                storePassword = releaseSigning.getProperty("storePassword")
+                keyAlias = releaseSigning.getProperty("keyAlias")
+                keyPassword = releaseSigning.getProperty("keyPassword")
+            }
+        }
+    }
     namespace = "com.kyusui.app"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "com.kyusui.app"
+        applicationId = "id.my.berkahwater.depot"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 1
@@ -69,6 +94,7 @@ android {
 
     buildTypes {
         release {
+            if (releaseSigningFile.isFile) signingConfig = signingConfigs.getByName("localRelease")
             isMinifyEnabled = false
             buildConfigField("String", "API_BASE_URL", buildConfigString(releaseApiBaseUrl))
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

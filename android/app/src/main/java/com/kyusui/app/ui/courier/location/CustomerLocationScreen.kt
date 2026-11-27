@@ -160,7 +160,7 @@ private fun LocationContent(
         CourierPageIntro(
             eyebrow = "Operasional / Tujuan",
             title = "Lokasi pelanggan",
-            description = "Periksa alamat tujuan dan kirim posisi perangkat yang terbaru."
+            description = "Periksa alamat tujuan dan lokasi yang terakhir diterima server."
         )
         DestinationCard(uiState = uiState)
 
@@ -170,28 +170,11 @@ private fun LocationContent(
             InlineError(message = message, onRetry = onRetry)
         }
 
-        LocationReadStatusCard(status = uiState.locationReadStatus)
-
-        if (uiState.canSendLocation) {
-            PrimaryButton(
-                text = "Kirim Posisi Saya",
-                onClick = onRequestLocation,
-                isLoading = uiState.isSubmitting || uiState.locationReadStatus ==
-                    CourierLocationReadStatus.Locating,
-                icon = Icons.Outlined.MyLocation
-            )
-            Text(
-                text = "Pastikan GPS aktif dan izin lokasi diberikan agar posisi terbaru dapat dikirim ke server.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        } else {
-            Text(
-                text = LOCATION_DISABLED_NOTE,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        Text(
+            text = if (uiState.canSendLocation) "Lokasi kurir diperbarui otomatis selama pengantaran. Pastikan GPS dan internet aktif." else "Tracking berhenti setelah pengantaran selesai.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

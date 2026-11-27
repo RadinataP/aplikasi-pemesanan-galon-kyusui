@@ -222,16 +222,18 @@ private fun DashboardContent(
             onClearMessage = onClearDutyMessage
         )
 
-        dashboard.activeDelivery?.let { active ->
-            SectionTitle(text = "Prioritas saat ini")
-            ActiveDeliveryCard(order = active, onOpenDelivery = onOpenDelivery)
+        if (dashboard.activeDeliveries.isNotEmpty()) {
+            SectionTitle(text = "Pengantaran aktif (${dashboard.activeDeliveries.size})")
+            dashboard.activeDeliveries.forEach { active ->
+                ActiveDeliveryCard(order = active, onOpenDelivery = onOpenDelivery)
+            }
         }
 
         SummarySection(dashboard = dashboard)
 
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SectionTitle(text = "Aksi operasional")
-            CourierActionTile(Icons.Outlined.LocalShipping, "Daftar pengantaran", "Lihat tugas dan detail pelanggan", onOpenAssignments)
+            CourierActionTile(Icons.Outlined.LocalShipping, "Pesanan & pengantaran", "Ambil pesanan baru dan lihat tugas aktif", onOpenAssignments)
             CourierActionTile(Icons.Outlined.Payments, "Verifikasi pembayaran QRIS", "Tinjau bukti pembayaran yang masuk", onOpenQrisVerification)
             CourierActionTile(Icons.Outlined.AddShoppingCart, "Catat pesanan langsung", "Buat pesanan untuk transaksi depot", onOpenDirectOrder)
         }

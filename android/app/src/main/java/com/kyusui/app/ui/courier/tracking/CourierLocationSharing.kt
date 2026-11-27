@@ -85,7 +85,7 @@ data class CourierLocationShareState(
 ) {
     /** True bila pengiriman berjalan untuk assignment ini. */
     fun isSharingFor(assignmentId: String): Boolean =
-        isSharing && !isDuty && sessionAssignmentId == assignmentId
+        isSharing && sessionAssignmentId == assignmentId
 
     /** True bila pengiriman sedang berjalan sebagai sesi bertugas. */
     val isOnDuty: Boolean
@@ -112,7 +112,7 @@ data class CourierLocationShareState(
  *
  * Controller memegang satu [loopJob] untuk seluruh proses. Hubungan 1:1 dengan
  * [CourierLocationService] dipastikan oleh guard di [start]: sesi kedua untuk
- * assignment lain diabaikan selama sesi pertama masih sharing. Upload berjalan
+ * assignment lain memakai loop yang sama; daftar aktif dibaca dari server. Upload berjalan
  * satu per satu: pembacaan yang datang saat upload sebelumnya belum selesai
  * dibuang (`drop-while-submitting`), dan [kotlinx.coroutines.flow.conflate]
  * membatasi buffer sehingga pembacaan yang sudah basi tidak menumpuk.
@@ -122,8 +122,8 @@ data class CourierLocationShareState(
  * Controller tidak pernah menulis status delivery/business. Kelayakan mengirim
  * dibaca dari Assignment Resource backend lewat `canPostLocation`, dan
  * `POST .../location` mengembalikan posisi yang sah menurut server. Penolakan
- * `401`/`403`/`409` menghentikan session karena mengirim lagi tidak akan
- * mengubah keputusan backend.
+ * `401` menghentikan sesi; penolakan assignment diperiksa ulang agar
+ * pengantaran lain tetap terlacak.
  */
 @Singleton
 class CourierLocationShareController @Inject constructor(
@@ -274,7 +274,7 @@ class CourierLocationShareController @Inject constructor(
     }
 
     override fun clearMessage() {
-        _state.update { it.copy(message = null, submitState = SubmitState.Idle) }
+        _state.update { it.copy(message = null, submitState = if (uploadJob?.isActive == true) it.submitState else SubmitState.Idle) }
     }
 
     override fun isSharingFor(assignmentId: String): Boolean =
@@ -301,7 +301,7 @@ class CourierLocationShareController @Inject constructor(
                         message = PROVIDER_DISABLED_MESSAGE
                     )
                 }
-                stop(TrackingStopReason.PROVIDER_DISABLED)
+                // Keep foreground session; retry after GPS becomes available.
             }
 
             LocationReadResult.Unavailable -> {
@@ -311,7 +311,7 @@ class CourierLocationShareController @Inject constructor(
                         message = LOCATION_UNAVAILABLE_MESSAGE
                     )
                 }
-                stop(TrackingStopReason.LOCATION_UNAVAILABLE)
+                // Keep foreground session; retry temporary provider failures.
             }
         }
     }
@@ -328,7 +328,7 @@ class CourierLocationShareController @Inject constructor(
     private fun acceptFix(target: SessionTarget, fix: CourierLocationFix) {
         val current = _state.value
         if (!current.isSharing) return
-        if (current.submitState is SubmitState.Submitting) return
+        if (current.submitState is SubmitState.Submitting || uploadJob?.isActive == true) return
 
         _state.update {
             it.copy(
@@ -340,22 +340,68 @@ class CourierLocationShareController @Inject constructor(
         }
 
         uploadJob = scope.launch {
-            val result = when (target) {
-                is SessionTarget.Assignment -> courierRepository.updateLocation(target.id, fix)
-                SessionTarget.Duty -> courierRepository.sendDutyLocation(fix)
+            val active = courierRepository.getActiveAssignmentIds()
+            if (active is Result.Failure) {
+                onUploadFailure(target, active)
+                return@launch
+            }
+            val ids = (active as Result.Success).data
+            val anchor = _state.value.sessionAssignmentId?.takeIf { it in ids } ?: ids.firstOrNull()
+            val result = if (anchor != null) {
+                _state.update { it.copy(sessionAssignmentId = anchor, isDuty = false) }
+                courierRepository.updateLocation(anchor, fix)
+            } else {
+                // The server, not the initial session target, decides whether duty survives.
+                when (val duty = courierRepository.getDutyState()) {
+                    is Result.Failure -> {
+                        onUploadFailure(target, duty)
+                        return@launch
+                    }
+                    is Result.Success -> if (!duty.data.isActive) {
+                        stop(if (_state.value.isDuty) TrackingStopReason.DUTY_SESSION_ENDED
+                             else TrackingStopReason.DELIVERY_NOT_ACTIVE)
+                        return@launch
+                    }
+                }
+                _state.update { it.copy(sessionAssignmentId = null, isDuty = true) }
+                courierRepository.sendDutyLocation(fix)
+            }
+            // An assignment may finish between the list and the upload. Recheck
+            // before stopping; another active order must not lose its GPS stream.
+            if (anchor != null && result is Result.Failure &&
+                (result.exception is ConflictException || result.exception is ForbiddenException)) {
+                when (val remaining = courierRepository.getActiveAssignmentIds()) {
+                    is Result.Failure -> onUploadFailure(target, remaining)
+                    is Result.Success -> {
+                        val alternative = remaining.data.firstOrNull { it != anchor }
+                        if (alternative != null) {
+                            _state.update { it.copy(sessionAssignmentId = alternative, submitState = SubmitState.Idle) }
+                        } else {
+                            when (val duty = courierRepository.getDutyState()) {
+                                is Result.Failure -> onUploadFailure(target, duty)
+                                is Result.Success -> if (duty.data.isActive && remaining.data.isEmpty()) {
+                                    _state.update { it.copy(sessionAssignmentId = null, isDuty = true, submitState = SubmitState.Idle) }
+                                } else {
+                                    stop(TrackingStopReason.DELIVERY_NOT_ACTIVE)
+                                }
+                            }
+                        }
+                    }
+                }
+                return@launch
             }
 
             when (result) {
                 is Result.Success -> _state.update {
                     it.copy(
-                        submitState = SubmitState.Success(target.key),
+                        submitState = SubmitState.Success(anchor ?: DUTY_SESSION_KEY),
                         // Posisi yang baru diterima server ditampilkan. Nilai
                         // ini hasil server, bukan pembacaan lokal.
                         lastReportedLocation = result.data
                     )
                 }
 
-                is Result.Failure -> onUploadFailure(target, result)
+                is Result.Failure -> onUploadFailure(if (anchor == null) SessionTarget.Duty else SessionTarget.Assignment(anchor), result)
             }
         }
     }
@@ -457,4 +503,23 @@ enum class TrackingStopReason {
 
     /** Sesi bertugas berakhir di server; pengiriman lokasi dihentikan. */
     DUTY_SESSION_ENDED
+}
+/** Reconcile completion against the server; never stop other active deliveries. */
+internal suspend fun reconcileCourierTracking(
+    repository: CourierRepository,
+    sharing: CourierLocationSharing,
+    reason: TrackingStopReason = TrackingStopReason.DELIVERY_NOT_ACTIVE
+) {
+    if (!sharing.state.value.isSharing) return
+    when (val active = repository.getActiveAssignmentIds()) {
+        is Result.Failure -> {
+            if (active.exception is UnauthorizedException) sharing.stop(TrackingStopReason.SESSION_EXPIRED)
+            return
+        }
+        is Result.Success -> if (active.data.isNotEmpty()) return
+    }
+    when (val duty = repository.getDutyState()) {
+        is Result.Failure -> if (duty.exception is UnauthorizedException) sharing.stop(TrackingStopReason.SESSION_EXPIRED)
+        is Result.Success -> if (!duty.data.isActive) sharing.stop(reason)
+    }
 }

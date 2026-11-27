@@ -107,9 +107,12 @@ class CourierTrackingViewModel @Inject constructor(
             when (val result = courierRepository.getAssignment(assignmentId)) {
                 is Result.Success -> {
                     _uiState.update { it.copy(deliveryState = LoadState.Success(result.data)) }
-                    if (!result.data.canPostLocation) {
-                        sharing.stop(TrackingStopReason.DELIVERY_NOT_ACTIVE)
+                    if (result.data.canPostLocation && _uiState.value.permissionState.allowsAcquisition) {
+                        sharing.start(assignmentId)
+                    } else if (!result.data.canPostLocation) {
+                        reconcileCourierTracking(courierRepository, sharing)
                     }
+                    _uiState.update { it.withShare(sharing.state.value) }
                 }
 
                 is Result.Failure -> _uiState.update {
@@ -130,6 +133,8 @@ class CourierTrackingViewModel @Inject constructor(
         _uiState.update { it.copy(permissionState = state) }
         if (!state.allowsAcquisition) {
             sharing.stop(TrackingStopReason.PERMISSION_NOT_GRANTED)
+        } else if (_uiState.value.delivery?.canPostLocation == true) {
+            sharing.start(assignmentId)
         }
     }
 
@@ -155,7 +160,7 @@ class CourierTrackingViewModel @Inject constructor(
      * memengaruhi layar ini.
      */
     private fun CourierTrackingUiState.withShare(share: CourierLocationShareState): CourierTrackingUiState {
-        if (share.sessionAssignmentId != assignmentId) return this
+        if (delivery?.canPostLocation != true) return copy(isTracking = false, stopReason = share.stopReason)
         return copy(
             isTracking = share.isSharing,
             stopReason = share.stopReason,

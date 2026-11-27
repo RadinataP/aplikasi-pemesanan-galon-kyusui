@@ -94,7 +94,7 @@ fun TrackingScreen(viewModel: TrackingViewModel, onBack: () -> Unit) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text("Lacak Pesanan", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(
-                        text = order?.orderNumber?.takeIf { it.isNotBlank() }?.let { "Pesanan $it" } ?: "Berkah Water · Berkah Water",
+                        text = order?.orderNumber?.takeIf { it.isNotBlank() }?.let { "Pesanan $it" } ?: "Berkah Water",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,

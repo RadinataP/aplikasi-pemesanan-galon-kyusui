@@ -187,13 +187,7 @@ fun CourierTrackingScreen(
 
             PositionSection(uiState = uiState)
 
-            TrackingControls(
-                uiState = uiState,
-                onStart = {
-                    permissionRequest.launcher()
-                },
-                onStop = { viewModel.stopTracking(TrackingStopReason.USER_REQUESTED) }
-            )
+            Text("Lokasi dikirim otomatis selama masih ada pengantaran aktif. Pastikan GPS dan internet menyala.", style = MaterialTheme.typography.bodySmall)
 
             uiState.message?.let { message ->
                 CourierCard(

@@ -84,7 +84,8 @@ fun OwnerOrderDetailScreen(
     onAssignCourier: (String) -> Unit,
     onRetryCouriers: () -> Unit,
     onOpenQrisVerification: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onConfirmCash: () -> Unit = {}
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -148,6 +149,7 @@ fun OwnerOrderDetailScreen(
                 onAssignCourier = onAssignCourier,
                 onRetryCouriers = onRetryCouriers,
                 onOpenQrisVerification = onOpenQrisVerification,
+                onConfirmCash = onConfirmCash,
                 modifier = Modifier.padding(innerPadding)
             )
         }
@@ -162,7 +164,8 @@ private fun OrderDetailContent(
     onAssignCourier: (String) -> Unit,
     onRetryCouriers: () -> Unit,
     onOpenQrisVerification: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onConfirmCash: () -> Unit = {}
 ) {
     Column(
         modifier = modifier
@@ -221,25 +224,21 @@ private fun OrderDetailContent(
         // --- Pengiriman ------------------------------------------------------
         DeliverySection(order = order)
 
-        // --- Penugasan kurir -------------------------------------------------
-        CourierAssignmentSection(
-            order = order,
-            couriersState = uiState.couriersState,
-            isSubmitting = uiState.isAssigningCourier,
-            errorMessage = uiState.assignmentErrorMessage,
-            successMessage = uiState.assignmentMessage,
-            onRetryCouriers = onRetryCouriers,
-            onAssign = onAssignCourier
-        )
-
-        // --- Aksi proses -----------------------------------------------------
-        StatusActionSection(
-            order = order,
-            isSubmitting = uiState.isUpdatingStatus,
-            errorMessage = uiState.statusErrorMessage,
-            successMessage = uiState.statusMessage,
-            onUpdateStatus = onUpdateStatus
-        )
+        Text("Pesanan tersedia untuk kurir tanpa persetujuan owner. Pantau status pengantaran di sini.", style = MaterialTheme.typography.bodySmall)
+        if (order.payment?.paymentMethod == PaymentMethod.CASH &&
+            order.payment?.paymentStatus == com.kyusui.app.domain.model.PaymentStatus.PENDING &&
+            order.orderStatus != OrderStatus.DIBATALKAN && order.orderStatus != OrderStatus.SELESAI) {
+            var confirm by rememberSaveable { mutableStateOf(false) }
+            PrimaryButton(text = "Konfirmasi Uang Tunai Diterima", onClick = { confirm = true }, isLoading = uiState.isUpdatingStatus)
+            if (confirm) androidx.compose.material3.AlertDialog(
+                onDismissRequest = { confirm = false },
+                title = { Text("Konfirmasi tunai") },
+                text = { Text("Pastikan uang sudah benar-benar diterima sebelum menandai lunas.") },
+                confirmButton = { androidx.compose.material3.TextButton(onClick = { confirm = false; onConfirmCash() }) { Text("Uang Diterima") } },
+                dismissButton = { androidx.compose.material3.TextButton(onClick = { confirm = false }) { Text("Batal") } }
+            )
+            uiState.statusErrorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        }
 
         // --- Verifikasi QRIS -------------------------------------------------
         if (order.payment?.paymentMethod == PaymentMethod.QRIS) {

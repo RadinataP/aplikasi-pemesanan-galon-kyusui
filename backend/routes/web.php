@@ -57,3 +57,6 @@ Route::view('/delete-account', 'public-info.delete', ['requestType' => 'delete-a
 Route::post('/requests/{type}', [PublicServiceRequestController::class, 'store'])
     ->whereIn('type', ['support', 'delete-account'])->middleware('throttle:5,10')->name('berkahwater.requests.store');
 
+
+// Berkah Water web password recovery routes.
+require __DIR__.'/berkah-password.php';
