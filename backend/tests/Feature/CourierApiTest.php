@@ -330,25 +330,44 @@ class CourierApiTest extends TestCase
     // tidak boleh menjalankan dua pengantaran aktif bersamaan.
     // ------------------------------------------------------------------
 
-    public function test_courier_cannot_start_a_second_concurrent_active_delivery(): void
+    public function test_courier_can_start_multiple_active_deliveries(): void
     {
         [$user, $courier] = $this->courier();
         $this->assignment($courier, 'CASH', AssignmentStatus::ACTIVE, OrderStatus::DALAM_PENGANTARAN);
-        $second = $this->assignment($courier, 'CASH', AssignmentStatus::ASSIGNED, OrderStatus::DITUGASKAN);
+        $second = $this->assignment($courier, 'CASH');
+        $this->actingAs($user)->postJson('/api/v1/courier/assignments/'.$second->id.'/start')->assertOk();
+        $this->assertDatabaseHas('courier_assignments', ['id' => $second->id, 'status' => AssignmentStatus::ACTIVE->value]);
+    }
 
-        $this->actingAs($user)->postJson('/api/v1/courier/assignments/'.$second->id.'/start')
-            ->assertStatus(409)
-            ->assertJson(['message' => 'Kurir sedang mengantarkan pesanan lain.']);
-
-        // Tidak ada state yang berubah pada assignment maupun order kedua.
-        $this->assertDatabaseHas('courier_assignments', [
-            'id' => $second->id,
-            'status' => AssignmentStatus::ASSIGNED->value,
-        ]);
-        $this->assertDatabaseHas('orders', [
-            'id' => $second->order_id,
-            'order_status' => OrderStatus::DITUGASKAN->value,
-        ]);
+    public function test_twelve_claims_exclusive_and_location_fans_out(): void
+    {
+        [$user, $courier] = $this->courier();
+        [$otherUser, $other] = $this->courier('other@example.com');
+        $ids = [];
+        $orders = [];
+        for ($i = 0; $i < 12; $i++) {
+            $old = $this->assignment($courier, $i % 2 ? 'QRIS' : 'CASH');
+            $order = Order::findOrFail($old->order_id);
+            $old->delete();
+            $order->update(['order_status' => OrderStatus::MENUNGGU_PEMBAYARAN->value]);
+            $orders[] = $order;
+        }
+        foreach ($orders as $order) {
+            $response = $this->actingAs($user)->postJson('/api/v1/courier/open-orders/'.$order->id.'/claim');
+            $response->assertCreated()->assertJsonPath('data.status', AssignmentStatus::ACTIVE->value);
+            $ids[] = $response->json('data.id');
+        }
+        $this->actingAs($otherUser)->postJson('/api/v1/courier/open-orders/'.$orders[0]->id.'/claim')->assertStatus(409);
+        $this->actingAs($user)->getJson('/api/v1/courier/active-assignment-ids')->assertOk()->assertJsonCount(12, 'data');
+        $this->actingAs($user)->postJson('/api/v1/courier/assignments/'.$ids[0].'/location', [
+            'latitude' => -0.81, 'longitude' => 100.37, 'accuracy_meters' => 8,
+        ])->assertOk();
+        foreach ($ids as $id) {
+            $this->assertDatabaseHas('courier_locations', ['courier_assignment_id' => $id, 'courier_id' => $courier->id]);
+        }
+        $this->actingAs($user)->postJson('/api/v1/courier/assignments/'.$ids[0].'/cash/confirm')->assertOk();
+        $this->actingAs($user)->postJson('/api/v1/courier/assignments/'.$ids[0].'/complete')->assertOk();
+        $this->actingAs($user)->getJson('/api/v1/courier/active-assignment-ids')->assertOk()->assertJsonCount(11, 'data');
     }
 
     /**

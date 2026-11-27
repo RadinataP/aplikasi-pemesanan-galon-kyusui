@@ -15,25 +15,26 @@ use App\Http\Controllers\Api\ProfileController;
 use Illuminate\Support\Facades\Route;
 
 /*
-|--------------------------------------------------------------------------
-| KYUSUI API v1
-|--------------------------------------------------------------------------
-|
-| Path dan method mengikuti katalog final `docs/06_KYUSUI_API_SPECIFICATION_REBUILT.md`
-| section 30. Base prefix `/api/v1` installation ditambahkan oleh `bootstrap/app.php`.
-|
-| Endpoint yang tidak ada di katalog dan sengaja dipertahankan diberi komentar
-| `preserved`, karena menghapusnya akan memutus klien yang sedang berjalan dan
-| tidak ada keputusan contract yang mengizinkan penghapusan tersebut.
-|
-*/
+ *|--------------------------------------------------------------------------
+ *| KYUSUI API v1
+ *|--------------------------------------------------------------------------
+ *|
+ *| Path dan method mengikuti katalog final `docs/06_KYUSUI_API_SPECIFICATION_REBUILT.md`
+ *| section 30. Prefix `/api` dari bootstrap/app.php, dan `v1` dari route group.
+ *|
+ *| Endpoint yang tidak ada di katalog dan sengaja dipertahankan diberi komentar
+ *| `preserved`, karena menghapusnya akan memutus klien yang sedang berjalan dan
+ *| tidak ada keputusan contract yang mengizinkan penghapusan tersebut.
+ *|
+ */
+
 Route::prefix('v1')->group(function () {
+
     // --- AUTH (spec 06 section 5) ---
     Route::post('auth/register', [AuthController::class, 'register'])->name('api.v1.auth.register');
     Route::post('auth/login', [AuthController::class, 'login'])
         ->middleware('throttle:login')
         ->name('api.v1.auth.login');
-
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('auth/logout', [AuthController::class, 'logout'])->name('api.v1.auth.logout');
         // preserved: session management di luar katalog spec
@@ -75,7 +76,6 @@ Route::prefix('v1')->group(function () {
             Route::put('customer/profile', [ProfileController::class, 'updateCustomerProfile'])
                 ->name('api.v1.customer.profile.update');
         });
-
         // preserved: profile management untuk OWNER dan COURIER, tidak ada di katalog spec
         Route::get('profile', [ProfileController::class, 'show'])->name('api.v1.profile.show');
         Route::put('profile', [ProfileController::class, 'update'])->name('api.v1.profile.update');
@@ -115,12 +115,10 @@ Route::prefix('v1')->group(function () {
             Route::post('orders/{order}/payment/proof', [PaymentController::class, 'proof'])
                 ->name('api.v1.customer.orders.payment.proof');
         });
-
         // preserved: private file delivery untuk QRIS image, tidak ada di katalog spec
         Route::middleware('role:CUSTOMER,OWNER')
             ->get('customer/payment/qris/image', [PaymentController::class, 'activeQrisImage'])
             ->name('customer.qris.image');
-
         // Shared depot payment operations: Owner and Courier may inspect and
         // verify QRIS proof. Atomic locking in OwnerController prevents double decisions.
         Route::prefix('owner')->middleware('role:OWNER,COURIER')->group(function () {
@@ -138,18 +136,14 @@ Route::prefix('v1')->group(function () {
             Route::post('products', [ProductController::class, 'store'])->name('api.v1.owner.products.store');
             Route::put('products/{product}', [ProductController::class, 'update'])->name('api.v1.owner.products.update');
             Route::delete('products/{product}', [ProductController::class, 'destroy'])->name('api.v1.owner.products.destroy');
-
             Route::get('orders', [OwnerController::class, 'orders'])->name('api.v1.owner.orders.index');
             Route::get('orders/{order}', [OwnerController::class, 'order'])->name('api.v1.owner.orders.show');
             // preserved: katalog spec tidak mendefinisikan endpoint daftar kurir
             Route::get('couriers', [OwnerController::class, 'couriers'])->name('api.v1.owner.couriers.index');
-
             Route::patch('orders/{order}/status', [OwnerController::class, 'updateStatus'])
                 ->name('api.v1.owner.orders.status');
             Route::post('orders/{order}/assignment', [OwnerController::class, 'assign'])
                 ->name('api.v1.owner.orders.assignment');
-
-
             Route::get('payment/qris', [OwnerController::class, 'qris'])->name('api.v1.owner.payment.qris.show');
             Route::put('payment/qris', [OwnerController::class, 'updateQris'])->name('api.v1.owner.payment.qris.update');
         });
@@ -169,6 +163,7 @@ Route::prefix('v1')->group(function () {
                 ->name('api.v1.courier.open-orders.index');
             Route::post('open-orders/{order}/claim', [CourierController::class, 'claimOrder'])
                 ->name('api.v1.courier.open-orders.claim');
+            Route::get('active-assignment-ids', [CourierController::class, 'activeAssignmentIds'])->name('api.v1.courier.active-assignment-ids');
             Route::get('assignments', [CourierController::class, 'index'])->name('api.v1.courier.assignments.index');
             Route::get('assignments/{assignment}', [CourierController::class, 'show'])->name('api.v1.courier.assignments.show');
             Route::post('assignments/{assignment}/start', [CourierController::class, 'start'])->name('api.v1.courier.assignments.start');
@@ -179,7 +174,6 @@ Route::prefix('v1')->group(function () {
                 ->name('api.v1.courier.assignments.location');
             Route::post('assignments/{assignment}/cash/confirm', [CourierController::class, 'cash'])->name('api.v1.courier.assignments.cash.confirm');
             Route::post('assignments/{assignment}/complete', [CourierController::class, 'complete'])->name('api.v1.courier.assignments.complete');
-
             // Sesi bertugas (on-duty) tanpa assignment aktif. Endpoint ini
             // merupakan kontrak baru (ditambahkan pada fase ini), bukan bagian
             // dari katalog spec 06, karena spec tidak mendefinisikan konsep
@@ -196,3 +190,6 @@ Route::prefix('v1')->group(function () {
         });
     });
 });
+
+// --- BERKAH WATER: RESET PASSWORD OTP (PUBLIC API) ---
+require __DIR__.'/berkah-password-api.php';

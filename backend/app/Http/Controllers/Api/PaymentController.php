@@ -261,7 +261,7 @@ class PaymentController extends Controller
         $proofFile = $validated['proof'] ?? $validated['proof_image'];
 
         abort_unless($payment->payment_method === PaymentMethod::QRIS->value, 409, 'Upload bukti hanya untuk pembayaran QRIS.');
-        abort_unless($order->order_status === OrderStatus::MENUNGGU_PEMBAYARAN->value, 409, 'Bukti pembayaran hanya dapat diunggah saat pesanan menunggu pembayaran.');
+        abort_unless(!in_array($order->order_status, [OrderStatus::SELESAI->value, OrderStatus::DIBATALKAN->value], true), 409, 'Bukti pembayaran hanya dapat diunggah sebelum pesanan selesai atau dibatalkan.');
         abort_unless($payment->payment_status === PaymentStatus::PENDING->value, 409, 'Bukti pembayaran tidak dapat diunggah pada status saat ini.');
 
         $storedProofPath = null;
@@ -269,6 +269,7 @@ class PaymentController extends Controller
 
         try {
             $payment = DB::transaction(function () use ($order, $payment, $proofFile, $request, &$storedProofPath): Payment {
+                $lockedOrder = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
                 $lockedPayment = Payment::query()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
                 abort_if(
                     $lockedPayment->payment_status === PaymentStatus::WAITING_VERIFICATION->value,
@@ -278,11 +279,10 @@ class PaymentController extends Controller
                 abort_unless($lockedPayment->payment_status === PaymentStatus::PENDING->value, 409, 'Status pembayaran telah berubah.');
                 abort_unless($lockedPayment->payment_method === PaymentMethod::QRIS->value, 409, 'Upload bukti hanya untuk pembayaran QRIS.');
 
-                $lockedOrder = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
                 abort_unless(
-                    $lockedOrder->order_status === OrderStatus::MENUNGGU_PEMBAYARAN->value,
+                    !in_array($lockedOrder->order_status, [OrderStatus::SELESAI->value, OrderStatus::DIBATALKAN->value], true),
                     409,
-                    'Bukti pembayaran hanya dapat diunggah saat pesanan menunggu pembayaran.',
+                    'Bukti pembayaran hanya dapat diunggah sebelum pesanan selesai atau dibatalkan.',
                 );
 
                 $proofPath = $proofFile->store('payment-proofs/order-'.$order->id, 'local');

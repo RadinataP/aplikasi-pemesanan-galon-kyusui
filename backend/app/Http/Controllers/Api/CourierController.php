@@ -124,7 +124,7 @@ class CourierController extends Controller
                             : (float) $assignment->order->delivery_longitude,
                     ],
                 'customer' => [
-                    'name' => $assignment->order->customer->user->name,
+                    'name' => $assignment->order->customer?->user?->name ?? $assignment->order->customer_name,
                 ],
                 'items' => $assignment->order->items->map(fn ($item) => [
                     'product_name' => $item->product_name ?? $item->product?->name,
@@ -147,8 +147,7 @@ class CourierController extends Controller
      * Daftar pesanan yang dapat diklaim oleh semua akun kurir ACTIVE.
      * Endpoint ini tidak mensyaratkan sesi duty aktif.
      *
-     * Pesanan QRIS yang belum diverifikasi tetap terlihat dan dapat diklaim,
-     * tetapi start() akan menolak pengantaran sampai payment berstatus PAID.
+     * Pesanan QRIS yang belum diverifikasi dapat diklaim; pembayaran wajib lunas sebelum pengantaran selesai.
      * Pesanan CASH dapat diklaim setelah metode pembayaran tersimpan.
      */
     public function openOrders(Request $request): JsonResponse
@@ -164,6 +163,7 @@ class CourierController extends Controller
         $orders = Order::query()
             ->with(['customer.user:id,name', 'items.product', 'payment'])
             ->whereIn('order_status', [
+                OrderStatus::MENUNGGU_PEMBAYARAN->value,
                 OrderStatus::MENUNGGU_DIPROSES->value,
                 OrderStatus::DIPROSES->value,
             ])
@@ -173,6 +173,7 @@ class CourierController extends Controller
                     PaymentMethod::QRIS->value,
                 ]);
             })
+            ->where('fulfillment_type', 'DELIVERY')
             ->whereDoesntHave('assignments')
             ->latestPlaced()
             ->get();
@@ -209,9 +210,8 @@ class CourierController extends Controller
                 'payment' => $order->payment === null ? null : [
                     'method' => $order->payment->payment_method,
                     'status' => $order->payment->payment_status,
-                    // QRIS pending boleh diklaim, tetapi belum boleh dimulai.
-                    'can_start_delivery' => $order->payment->payment_method === PaymentMethod::CASH->value
-                        || $order->payment->payment_status === PaymentStatus::PAID->value,
+                    // QRIS pending boleh diklaim dan mulai diantar.
+                    'can_start_delivery' => true,
                 ],
                 'can_claim' => true,
             ]),
@@ -247,6 +247,7 @@ class CourierController extends Controller
 
                 abort_unless(
                     in_array($lockedOrder->order_status, [
+                        OrderStatus::MENUNGGU_PEMBAYARAN->value,
                         OrderStatus::MENUNGGU_DIPROSES->value,
                         OrderStatus::DIPROSES->value,
                     ], true),
@@ -254,6 +255,7 @@ class CourierController extends Controller
                     'Pesanan tidak lagi tersedia untuk diklaim.'
                 );
 
+                abort_unless($lockedOrder->fulfillment_type === 'DELIVERY', 409, 'Pesanan bukan pengantaran.');
                 // Periksa ulang assignment setelah lock order didapat.
                 abort_if(
                     CourierAssignment::query()->where('order_id', $lockedOrder->id)->exists(),
@@ -279,15 +281,16 @@ class CourierController extends Controller
                 $assignment = CourierAssignment::create([
                     'order_id' => $lockedOrder->id,
                     'courier_id' => $courierId,
-                    'status' => AssignmentStatus::ASSIGNED->value,
+                    'status' => AssignmentStatus::ACTIVE->value,
                     'assigned_at' => now(),
+                    'started_at' => now(),
                 ]);
 
                 $previousStatus = $lockedOrder->order_status;
-                $lockedOrder->update(['order_status' => OrderStatus::DITUGASKAN->value]);
+                $lockedOrder->update(['order_status' => OrderStatus::DALAM_PENGANTARAN->value]);
                 $lockedOrder->statusHistories()->create([
                     'from_status' => $previousStatus,
-                    'to_status' => OrderStatus::DITUGASKAN->value,
+                    'to_status' => OrderStatus::DALAM_PENGANTARAN->value,
                     'changed_by_user_id' => $request->user()->id,
                     'changed_at' => now(),
                     'note' => 'Pesanan diklaim oleh kurir melalui Open Delivery Pool.',
@@ -312,7 +315,7 @@ class CourierController extends Controller
         $claimedOrder = Order::query()->with('customer.user')->findOrFail($order->id);
 
         // Beri tahu pelanggan bahwa kurir sudah mengambil pesanan.
-        event(new BusinessActionOccurred(
+        if ($claimedOrder->customer !== null) event(new BusinessActionOccurred(
             userId: $claimedOrder->customer->user_id,
             type: 'COURIER_ASSIGNED',
             title: 'Kurir Mengambil Pesanan',
@@ -340,8 +343,16 @@ class CourierController extends Controller
 
         return response()->json([
             'data' => $this->assignmentData($assignment),
-            'message' => 'Pesanan berhasil diklaim. Periksa status pembayaran sebelum memulai pengantaran.',
+            'message' => 'Pesanan diterima. Pengantaran dan tracking aktif.',
         ], 201);
+    }
+
+    public function activeAssignmentIds(Request $request): JsonResponse
+    {
+        return response()->json(['data' => CourierAssignment::query()
+            ->where('courier_id', $this->courierId($request))
+            ->where('status', AssignmentStatus::ACTIVE->value)
+            ->orderBy('id')->pluck('id')->map(fn ($id) => (string) $id)->values()]);
     }
 
     public function index(Request $request): JsonResponse
@@ -386,31 +397,7 @@ class CourierController extends Controller
                     'Pengantaran tidak dapat dimulai karena status pengantaran tidak sesuai.'
                 );
 
-                // QRIS wajib sudah diverifikasi (PAID) sebelum kurir memulai.
-                // CASH boleh dimulai saat PENDING karena konfirmasi uang diterima
-                // memang dilakukan kurir selama pengantaran aktif.
-                $payment = Payment::query()->where('order_id', $order->id)->lockForUpdate()->first();
-                abort_if($payment === null, 409, 'Pembayaran pesanan tidak ditemukan.');
-                abort_unless(
-                    $payment->payment_method === PaymentMethod::CASH->value
-                        || (
-                            $payment->payment_method === PaymentMethod::QRIS->value
-                            && $payment->payment_status === PaymentStatus::PAID->value
-                        ),
-                    409,
-                    'Pengantaran belum dapat dimulai sebelum pembayaran QRIS diverifikasi Owner.'
-                );
-
-                abort_if(
-                    CourierAssignment::query()
-                        ->where('courier_id', $lockedAssignment->courier_id)
-                        ->where('status', AssignmentStatus::ACTIVE->value)
-                        ->where('id', '!=', $lockedAssignment->id)
-                        ->lockForUpdate()
-                        ->exists(),
-                    409,
-                    'Kurir sedang mengantarkan pesanan lain.'
-                );
+                abort_unless($order->payment()->exists(), 409, 'Pembayaran pesanan tidak ditemukan.');
 
                 $lockedAssignment->update([
                     'status' => AssignmentStatus::ACTIVE->value,
@@ -437,7 +424,7 @@ class CourierController extends Controller
         }
 
         $order = Order::query()->with('customer.user')->findOrFail($assignment->order_id);
-        event(new BusinessActionOccurred(
+        if ($order->customer !== null) event(new BusinessActionOccurred(
             userId: $order->customer->user_id,
             type: 'DELIVERY_STARTED',
             title: 'Pengantaran Dimulai',
@@ -470,6 +457,7 @@ class CourierController extends Controller
 
         try {
             $location = DB::transaction(function () use ($assignment, $request, $validated): CourierLocation {
+                \App\Models\Courier::query()->whereKey($assignment->courier_id)->lockForUpdate()->firstOrFail();
                 $lockedAssignment = CourierAssignment::query()
                     ->whereKey($assignment->id)
                     ->lockForUpdate()
@@ -518,6 +506,22 @@ class CourierController extends Controller
                     'recorded_at' => $recordedAt,
                 ]);
 
+                // Satu GPS fix untuk seluruh pesanan aktif milik kurir ini.
+                $others = CourierAssignment::query()
+                    ->where('courier_id', $lockedAssignment->courier_id)
+                    ->where('status', AssignmentStatus::ACTIVE->value)
+                    ->where('id', '!=', $lockedAssignment->id)
+                    ->lockForUpdate()->get();
+                foreach ($others as $other) {
+                    $other->locations()->create([
+                        'courier_id' => $other->courier_id,
+                        'latitude' => $validated['latitude'],
+                        'longitude' => $validated['longitude'],
+                        'accuracy_meters' => $validated['accuracy_meters'],
+                        'recorded_at' => $recordedAt,
+                    ]);
+                }
+
                 Log::info('Courier location updated.', $this->logContext($lockedAssignment, $request));
 
                 return $location;
@@ -530,21 +534,17 @@ class CourierController extends Controller
             return $this->serverError($exception, 'location', $assignment);
         }
 
-        $order = Order::query()->with('customer.user')->findOrFail($assignment->order_id);
-        $trackingNotificationExists = Notification::query()
-            ->where('user_id', $order->customer->user_id)
-            ->where('type', 'TRACKING_AVAILABLE')
-            ->whereJsonContains('data->assignment_id', $assignment->id)
-            ->exists();
-
-        if (! $trackingNotificationExists) {
-            event(new BusinessActionOccurred(
-                userId: $order->customer->user_id,
-                type: 'TRACKING_AVAILABLE',
-                title: 'Tracking Tersedia',
-                body: 'Lokasi Courier untuk pesanan Anda sudah tersedia.',
-                data: ['order_id' => $order->id, 'assignment_id' => $assignment->id],
-            ));
+        $active = CourierAssignment::query()->where('courier_id', $assignment->courier_id)
+            ->where('status', AssignmentStatus::ACTIVE->value)->with('order.customer')->get();
+        foreach ($active as $delivery) {
+            $customerUserId = $delivery->order?->customer?->user_id;
+            if ($customerUserId === null) continue;
+            if (!Notification::query()->where('user_id', $customerUserId)
+                ->where('type', 'TRACKING_AVAILABLE')->whereJsonContains('data->assignment_id', $delivery->id)->exists()) {
+                event(new BusinessActionOccurred(userId: $customerUserId, type: 'TRACKING_AVAILABLE',
+                    title: 'Tracking Tersedia', body: 'Lokasi kurir untuk pesanan Anda tersedia.',
+                    data: ['order_id' => $delivery->order_id, 'assignment_id' => $delivery->id]));
+            }
         }
 
         // Spec 09 §29.1 menetapkan `data.location` berisi koordinat, accuracy, dan
@@ -601,7 +601,7 @@ class CourierController extends Controller
         $order = Order::query()
             ->with('customer.user')
             ->findOrFail($assignment->order_id);
-        event(new BusinessActionOccurred(
+        if ($order->customer !== null) event(new BusinessActionOccurred(
             userId: $order->customer->user_id,
             type: 'PAYMENT_CASH_CONFIRMED',
             title: 'Pembayaran Tunai Dikonfirmasi',
@@ -690,13 +690,13 @@ class CourierController extends Controller
             'assignment_id' => $assignment->id,
             'order_status' => $completedOrder->order_status,
         ];
-        $recipientUserIds = collect([$completedOrder->customer->user_id, $request->user()->id])
+        $recipientUserIds = collect([$completedOrder->customer?->user_id, $request->user()->id])
             ->merge(
                 User::query()
                     ->whereHas('role', fn ($query) => $query->where('name', 'OWNER'))
                     ->pluck('id')
             )
-            ->unique();
+            ->filter()->unique();
         $recipientUserIds->each(fn (int $recipientUserId) => event(new BusinessActionOccurred(
             userId: $recipientUserId,
             type: 'ORDER_COMPLETED',

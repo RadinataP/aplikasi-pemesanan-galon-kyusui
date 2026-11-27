@@ -204,12 +204,13 @@ class DashboardController extends Controller
             $activeAssignment = $courier->assignments()
                 ->where('status', AssignmentStatus::ACTIVE->value)
                 ->with(['order.customer.user:id,name', 'order.payment', 'order.items', 'order.assignments'])
-                ->latest('id')->first();
+                ->latest('id')->get();
             $todayAssignmentRecords = $todayAssignments
                 ->with(['order.customer.user:id,name', 'order.payment', 'order.items', 'order.assignments'])
-                ->latest('assigned_at')->limit(20)->get();
+                ->latest('assigned_at')->get();
             $data = [
-                'active_assignment' => $activeAssignment ? new DashboardOrderResource($activeAssignment->order) : null,
+                'active_assignment' => $activeAssignment->isNotEmpty() ? new DashboardOrderResource($activeAssignment->first()->order) : null,
+                'active_assignments' => DashboardOrderResource::collection($activeAssignment->map->order),
                 'today_assignments' => DashboardOrderResource::collection($todayAssignmentRecords->map->order),
                 'summary' => [
                     'today_deliveries' => (clone $todayAssignments)->count(),
